@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Loonie Tunes</string>
+    <string name="title_activity_main">Loonie Tunes</string>
+    <string name="package_name">com.reaper357.loonietunes</string>
+    <string name="custom_url_scheme">com.reaper357.loonietunes</string>
+</resources>

@@ -1,0 +1,2498 @@
+<!DOCTYPE html>
+<html lang="en" class="dark" data-theme="black">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loonie Tunes - Audio Player</title>
+
+    <!-- PWA & Theme Integration -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#000000">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon.png">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#ecfdf5',
+                            100: '#d1fae5',
+                            500: '#10b981',
+                            600: '#059669',
+                            700: '#047857',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- jsmediatags for client-side ID3/metadata extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <!-- FontAwesome for clean iconography -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --accent-color: #10b981;
+            --page-bg: #000000;
+            --page-fg: #f1f5f9;
+            --panel-bg: #18181b;
+            --bar-bg: rgba(0, 0, 0, 0.95);
+            --nav-bg: #09090b;
+            --bar-border: #27272a;
+        }
+        [data-theme="dark"] {
+            --page-bg: #0f172a;
+            --panel-bg: #1e293b;
+            --bar-bg: rgba(15, 23, 42, 0.95);
+            --nav-bg: #020617;
+            --bar-border: #1e293b;
+        }
+        [data-theme="light"] {
+            --page-bg: #f1f5f9;
+            --page-fg: #1e293b;
+            --panel-bg: #ffffff;
+            --bar-bg: rgba(255, 255, 255, 0.95);
+            --nav-bg: #e2e8f0;
+            --bar-border: #cbd5e1;
+        }
+
+        body { background-color: var(--page-bg); color: var(--page-fg); }
+        .panel-bg { background-color: var(--panel-bg); }
+        .app-header { background-color: var(--bar-bg); border-color: var(--bar-border); }
+        .app-nav { background-color: var(--nav-bg); border-color: var(--bar-border); }
+        .tab-btn.active { border-color: var(--accent-color); }
+
+        .accent-text { color: var(--accent-color) !important; }
+        .accent-bg { background-color: var(--accent-color) !important; }
+        .accent-border { border-color: var(--accent-color) !important; }
+        .on-art { color: #ffffff !important; background-color: rgba(0, 0, 0, 0.6) !important; }
+        input[type=range], input[type=checkbox] { accent-color: var(--accent-color); }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Light theme: remap the hardcoded dark utility classes */
+        [data-theme="light"] .bg-black,
+        [data-theme="light"] .bg-black\/40,
+        [data-theme="light"] .bg-black\/50 { background-color: #f1f5f9; }
+        [data-theme="light"] .bg-zinc-800 { background-color: #e2e8f0; }
+        [data-theme="light"] .bg-zinc-900,
+        [data-theme="light"] .bg-zinc-900\/40 { background-color: #f8fafc; }
+        [data-theme="light"] .hover\:bg-zinc-700:hover { background-color: #cbd5e1; }
+        [data-theme="light"] .border-zinc-800,
+        [data-theme="light"] .border-zinc-700 { border-color: #cbd5e1; }
+        [data-theme="light"] .text-white:not(.accent-bg):not(.bg-red-600),
+        [data-theme="light"] .text-zinc-100,
+        [data-theme="light"] .text-zinc-200,
+        [data-theme="light"] .text-zinc-300 { color: #1e293b; }
+        [data-theme="light"] .text-zinc-400,
+        [data-theme="light"] .text-zinc-500,
+        [data-theme="light"] .text-zinc-600 { color: #64748b; }
+        [data-theme="light"] .hover\:text-white:hover,
+        [data-theme="light"] .hover\:text-zinc-200:hover { color: #0f172a; }
+        [data-theme="light"] .accent-bg { color: #ffffff; }
+    </style>
+</head>
+<body id="appBody" class="min-h-screen flex flex-col font-sans transition-colors duration-200 select-none pb-36">
+
+    <!-- TOP HEADER -->
+    <header id="appHeader" class="app-header sticky top-0 z-30 backdrop-blur-md border-b px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <img src="small-icon.png" alt="Logo" class="w-9 h-9 rounded-full object-cover border border-zinc-700 shadow-sm" />
+            <div>
+                <h1 id="appTitleHeader" class="text-base font-bold tracking-tight leading-none text-emerald-400">LOONIE TUNES</h1>
+                <p class="text-[10px] text-zinc-400 font-medium">Audio Player</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button id="selectFolderBtn" aria-label="Open music folder" class="accent-bg hover:opacity-90 text-white text-xs font-semibold px-3 py-2 rounded-xl shadow-md transition flex items-center space-x-2">
+                <i class="fa-solid fa-folder-open"></i>
+                <span id="folderBtnText" class="hidden sm:inline">Open Folder</span>
+            </button>
+            <input type="file" id="fallbackFolderInput" aria-label="Choose a music folder" multiple accept="audio/*" class="hidden" />
+
+            <button id="addFilesBtn" aria-label="Add song files" title="Add song files" class="p-2.5 rounded-xl text-zinc-300 hover:bg-zinc-800/50 transition">
+                <i class="fa-solid fa-file-audio text-lg"></i>
+            </button>
+            <input type="file" id="filePickerInput" aria-label="Choose audio files" multiple accept="audio/*" class="hidden" />
+
+            <button id="openSettingsBtn" aria-label="Open settings" class="p-2.5 rounded-xl text-zinc-300 hover:bg-zinc-800/50 transition">
+                <i class="fa-solid fa-gear text-lg"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- NAVIGATION TABS -->
+    <nav id="appNav" class="app-nav border-b px-4 pt-2">
+        <div class="flex space-x-1 sm:space-x-2 overflow-x-auto no-scrollbar max-w-4xl mx-auto" id="navTabs">
+            <button data-tab="tracks" class="tab-btn active px-4 py-2.5 text-xs font-semibold rounded-t-lg border-b-2 accent-text flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-list-ul"></i> <span>Tracks</span>
+            </button>
+            <button data-tab="artists" class="tab-btn px-4 py-2.5 text-xs font-medium rounded-t-lg text-zinc-400 hover:text-zinc-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-user-astronaut"></i> <span>Artists</span>
+            </button>
+            <button data-tab="albums" class="tab-btn px-4 py-2.5 text-xs font-medium rounded-t-lg text-zinc-400 hover:text-zinc-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-compact-disc"></i> <span>Albums</span>
+            </button>
+            <button data-tab="genres" class="tab-btn px-4 py-2.5 text-xs font-medium rounded-t-lg text-zinc-400 hover:text-zinc-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-tags"></i> <span>Genres</span>
+            </button>
+            <button data-tab="playlists" class="tab-btn px-4 py-2.5 text-xs font-medium rounded-t-lg text-zinc-400 hover:text-zinc-200 flex items-center space-x-2 whitespace-nowrap">
+                <i class="fa-solid fa-folder-plus"></i> <span>Playlists</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- TOAST -->
+    <div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 z-[60] hidden px-4 py-2 rounded-xl bg-zinc-800 text-zinc-100 text-xs font-medium shadow-xl border border-zinc-700 max-w-[90vw] text-center"></div>
+
+    <!-- MAIN VIEW AREA -->
+    <main class="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6">
+
+        <!-- RESTORED-LIBRARY BANNER -->
+        <div id="relinkBanner" class="hidden mb-4 p-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 text-xs flex items-center justify-between gap-3">
+            <p class="text-amber-500 font-medium"><i class="fa-solid fa-link-slash mr-1.5"></i> Library restored from your last session. Re-open your music folder to enable playback. Your playlists will line up automatically.</p>
+            <button id="btnRelink" class="accent-bg text-white font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap">Open Folder</button>
+        </div>
+
+        <!-- GLOBAL SEARCH & BATCH TOOLBAR -->
+        <div id="toolbar" class="panel-bg mb-4 p-3 rounded-2xl border border-zinc-800 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2 flex-1 min-w-[200px]">
+                <div class="relative flex-1">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs"></i>
+                    <input type="text" id="searchInput" aria-label="Search" placeholder="Search tracks, artists, albums..." class="w-full pl-9 pr-3 py-1.5 bg-black border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500">
+                </div>
+                <button id="btnViewToggle" aria-label="Switch view" title="Switch between list and grid" class="w-9 h-9 flex-shrink-0 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition flex items-center justify-center">
+                    <i class="fa-solid fa-grip"></i>
+                </button>
+            </div>
+
+            <div class="flex items-center space-x-2 text-xs">
+                <button id="btnSelectAll" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition">
+                    <i class="fa-solid fa-square-check mr-1"></i> Select All
+                </button>
+                <button id="btnDeselectAll" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition">
+                    <i class="fa-solid fa-square text-zinc-500 mr-1"></i> Clear
+                </button>
+                <button id="btnAddSelectedToPlaylist" class="px-3 py-1.5 rounded-lg accent-bg hover:opacity-90 text-white font-semibold shadow-sm transition disabled:opacity-50 disabled:pointer-events-none" disabled>
+                    <i class="fa-solid fa-plus mr-1"></i> Add to Playlist (<span id="selectedCount">0</span>)
+                </button>
+            </div>
+        </div>
+
+        <!-- TAB CONTENT VIEWS -->
+        <section id="view-tracks" class="tab-view space-y-2">
+            <div id="tracksList" class="space-y-1.5">
+                <div class="text-center py-16 bg-zinc-900/40 rounded-3xl border border-dashed border-zinc-800 p-6">
+                    <div class="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-500 text-2xl">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-zinc-200">No Audio Files Loaded</h3>
+                    <p class="text-xs text-zinc-400 max-w-sm mx-auto mt-1 mb-5">Select a folder from your device storage to import tracks cleanly.</p>
+                    <button onclick="document.getElementById('selectFolderBtn').click()" class="accent-bg hover:opacity-90 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-md transition">
+                        Select Music Directory
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-artists" class="tab-view hidden space-y-3">
+            <div id="artistsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+        </section>
+
+        <section id="view-albums" class="tab-view hidden space-y-3">
+            <div id="albumsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+        </section>
+
+        <section id="view-genres" class="tab-view hidden space-y-3">
+            <div id="genresGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+        </section>
+
+        <section id="view-playlists" class="tab-view hidden space-y-4">
+            <div class="panel-bg flex items-center justify-between p-3.5 rounded-2xl border border-zinc-800 shadow-sm">
+                <div>
+                    <h2 class="text-sm font-bold text-zinc-100">Custom Playlists</h2>
+                    <p class="text-[11px] text-zinc-400">Organize and export your curated music mixes</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="btnCreatePlaylist" class="accent-bg hover:opacity-90 text-white text-xs font-semibold px-3 py-2 rounded-xl shadow-md transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-plus"></i> <span>New Playlist</span>
+                    </button>
+                    <button id="btnExportPlaylists" aria-label="Export playlists" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center space-x-1.5" title="Export Playlists to JSON">
+                        <i class="fa-solid fa-file-export"></i> <span class="hidden sm:inline">Export</span>
+                    </button>
+                    <label id="btnImportPlaylists" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold px-3 py-2 rounded-xl transition cursor-pointer flex items-center space-x-1.5" title="Import Playlists from JSON">
+                        <i class="fa-solid fa-file-import"></i> <span class="hidden sm:inline">Import</span>
+                        <input type="file" id="importJsonInput" aria-label="Import playlists file" accept=".json" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <div id="playlistsList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+        </section>
+
+        <!-- DETAIL VIEW FOR GROUP/PLAYLIST DRILLDOWN -->
+        <div id="detailView" class="panel-bg hidden space-y-3 p-4 rounded-2xl border border-zinc-800 shadow-lg">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3 gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div id="detailArt" class="hidden w-16 h-16 rounded-xl bg-zinc-800 overflow-hidden flex-shrink-0"></div>
+                    <div class="min-w-0">
+                    <button id="btnBackFromDetail" class="text-xs font-semibold accent-text hover:underline flex items-center space-x-1 mb-1">
+                        <i class="fa-solid fa-arrow-left"></i> <span>Back</span>
+                    </button>
+                    <h2 id="detailTitle" class="text-base font-bold text-zinc-100">Group Title</h2>
+                    <p id="detailSubtitle" class="text-xs text-zinc-400">0 tracks</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <div id="playlistEditActions" class="hidden flex items-center gap-1.5">
+                        <button id="btnAddSongsToPlaylist" title="Add songs to playlist" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center space-x-1">
+                            <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Add Songs</span>
+                        </button>
+                        <button id="btnSortPlaylist" title="Sort tracks" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center space-x-1">
+                            <i class="fa-solid fa-arrow-down-a-z"></i> <span class="hidden sm:inline">Sort</span>
+                        </button>
+                        <button id="btnDuplicatePlaylist" title="Duplicate playlist" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold px-2.5 py-2 rounded-xl transition">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                    <button id="btnPlayDetail" class="accent-bg text-white text-xs font-semibold px-3 py-2 rounded-xl shadow-md flex items-center space-x-1.5">
+                        <i class="fa-solid fa-play text-[10px]"></i> <span>Play All</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- BATCH EDIT TOOLBAR FOR PLAYLIST DETAIL VIEW -->
+            <div id="playlistBatchToolbar" class="hidden panel-bg p-2.5 rounded-xl border border-zinc-800 flex items-center justify-between text-xs">
+                <div class="flex items-center space-x-2">
+                    <span class="text-zinc-300 font-medium"><span id="plSelectedCount">0</span> selected</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="btnPlSelectAll" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition">Select All</button>
+                    <button id="btnPlRemoveSelected" class="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold shadow-sm transition">
+                        <i class="fa-solid fa-trash-can mr-1"></i> Remove Selected
+                    </button>
+                </div>
+            </div>
+
+            <div id="detailTracksList" class="space-y-1.5 max-h-[60vh] overflow-y-auto"></div>
+        </div>
+
+    </main>
+
+    <!-- PERSISTENT FOOTER PLAYER -->
+    <footer class="fixed bottom-8 left-0 right-0 z-20 max-w-3xl mx-auto px-4">
+        <div class="panel-bg bg-opacity-95 backdrop-blur-lg border border-zinc-800 rounded-2xl p-3 shadow-2xl flex flex-col space-y-2">
+
+            <div class="flex items-center space-x-2 text-[10px] text-zinc-400 font-mono">
+                <span id="currentTime">00:00</span>
+                <input type="range" id="seekSlider" aria-label="Seek" value="0" max="100" step="0.1" class="flex-1 h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer">
+                <span id="durationTime">00:00</span>
+            </div>
+
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center space-x-3 min-w-0 flex-1">
+                    <div id="playerArt" class="w-10 h-10 rounded-xl bg-zinc-800 flex-shrink-0 flex items-center justify-center text-zinc-400 overflow-hidden">
+                        <i class="fa-solid fa-music"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p id="playerTrackTitle" class="text-xs font-bold truncate text-zinc-100">No track selected</p>
+                        <p id="playerArtistTitle" class="text-[11px] text-zinc-400 truncate">Select a track to start</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-2 sm:space-x-3">
+                    <button id="btnShuffle" aria-label="Shuffle" class="p-2 text-zinc-400 hover:text-zinc-200 transition text-xs" title="Shuffle">
+                        <i class="fa-solid fa-shuffle"></i>
+                    </button>
+                    <button id="btnPrev" aria-label="Previous track" class="p-2 text-zinc-200 hover:text-white transition text-sm">
+                        <i class="fa-solid fa-backward-step"></i>
+                    </button>
+                    <button id="btnPlayPause" aria-label="Play or pause" class="w-10 h-10 accent-bg hover:opacity-90 text-white rounded-xl shadow-lg flex items-center justify-center transition text-sm">
+                        <i class="fa-solid fa-play"></i>
+                    </button>
+                    <button id="btnNext" aria-label="Next track" class="p-2 text-zinc-200 hover:text-white transition text-sm">
+                        <i class="fa-solid fa-forward-step"></i>
+                    </button>
+                    <button id="btnRepeat" aria-label="Repeat mode" class="p-2 text-zinc-400 hover:text-zinc-200 transition text-xs" title="Repeat Mode">
+                        <i class="fa-solid fa-repeat"></i>
+                    </button>
+                </div>
+
+                <div class="flex items-center space-x-1">
+                    <button id="btnExtraControls" aria-label="Audio boost and speed controls" class="p-2 text-zinc-400 hover:text-white rounded-xl transition" title="Audio Boost & Speed Controls">
+                        <i class="fa-solid fa-sliders text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="extraControlsPanel" class="hidden pt-3 mt-1 border-t border-zinc-800 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div class="space-y-1">
+                    <div class="flex justify-between font-semibold text-zinc-300">
+                        <span>Audio Boost / Gain</span>
+                        <span id="gainValueDisplay" class="accent-text">100%</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-volume-high text-zinc-400 text-xs"></i>
+                        <input type="range" id="gainSlider" aria-label="Gain" min="0" max="3" step="0.05" value="1" class="w-full h-1 bg-zinc-800 rounded-lg">
+                        <i class="fa-solid fa-bolt text-amber-500 text-xs"></i>
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between font-semibold text-zinc-300">
+                        <span>Playback Speed</span>
+                        <span id="speedValueDisplay" class="accent-text">1.0x</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-gauge text-zinc-400 text-xs"></i>
+                        <input type="range" id="speedSlider" aria-label="Playback speed" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full h-1 bg-zinc-800 rounded-lg">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- FOOTER SIGNATURE -->
+    <div class="fixed bottom-1 left-0 right-0 z-10 text-center pointer-events-none">
+        <p class="text-[10px] font-mono tracking-widest text-zinc-600 uppercase">
+            Made by REAPER-357
+        </p>
+    </div>
+
+    <!-- SETTINGS MODAL -->
+    <div id="settingsModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="panel-bg w-full max-w-sm rounded-3xl p-6 border border-zinc-800 shadow-2xl space-y-5 text-center relative">
+            <button class="closeModalBtn absolute top-4 right-4 text-zinc-400 hover:text-white text-lg" aria-label="Close">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+
+            <img src="icon.png" alt="Loonie Tunes Logo" class="w-32 h-32 mx-auto rounded-2xl object-cover border-2 border-zinc-700 shadow-lg mb-2" />
+
+            <h3 class="text-base font-bold text-white">Loonie Tunes Settings</h3>
+            <p class="text-xs text-zinc-400">Customize theme and accent color</p>
+
+            <div class="bg-black/50 p-3 rounded-2xl border border-zinc-800 space-y-2 text-left">
+                <span class="text-xs font-semibold text-zinc-300">App Background Theme</span>
+                <div class="grid grid-cols-3 gap-2 pt-1">
+                    <button onclick="setAppTheme('black')" id="themeBtn-black" class="py-1.5 px-2 rounded-xl text-xs font-medium bg-zinc-900 border border-zinc-700 text-white transition">Pure Black</button>
+                    <button onclick="setAppTheme('dark')" id="themeBtn-dark" class="py-1.5 px-2 rounded-xl text-xs font-medium bg-zinc-800 border border-zinc-700 text-zinc-300 transition">Dark</button>
+                    <button onclick="setAppTheme('light')" id="themeBtn-light" class="py-1.5 px-2 rounded-xl text-xs font-medium bg-slate-200 border border-slate-300 text-slate-800 transition">Light</button>
+                </div>
+            </div>
+
+            <div class="bg-black/50 p-3 rounded-2xl border border-zinc-800 space-y-2 text-left">
+                <span class="text-xs font-semibold text-zinc-300">Accent Color</span>
+                <div class="flex items-center justify-around pt-2">
+                    <button aria-label="Green accent" onclick="setAccentColor('#10b981')" class="w-7 h-7 rounded-full bg-emerald-500 hover:scale-110 transition-transform shadow"></button>
+                    <button aria-label="Red accent" onclick="setAccentColor('#ef4444')" class="w-7 h-7 rounded-full bg-red-500 hover:scale-110 transition-transform shadow"></button>
+                    <button aria-label="Blue accent" onclick="setAccentColor('#3b82f6')" class="w-7 h-7 rounded-full bg-blue-500 hover:scale-110 transition-transform shadow"></button>
+                    <button aria-label="Purple accent" onclick="setAccentColor('#a855f7')" class="w-7 h-7 rounded-full bg-purple-500 hover:scale-110 transition-transform shadow"></button>
+                    <button aria-label="Amber accent" onclick="setAccentColor('#f59e0b')" class="w-7 h-7 rounded-full bg-amber-500 hover:scale-110 transition-transform shadow"></button>
+                </div>
+            </div>
+
+            <div class="bg-black/50 p-3 rounded-2xl border border-zinc-800 text-xs space-y-1 text-left">
+                <p class="font-bold text-zinc-300">Privacy & Scope Assurance</p>
+                <p class="text-[11px] text-zinc-400 leading-relaxed">
+                    Runs strictly client-side using native directory scopes. Call logs and unrelated folders remain completely isolated.
+                </p>
+            </div>
+
+            <div class="text-center pt-1">
+                <p class="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Designed by REAPER-357</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- CREATE/EDIT PLAYLIST MODAL -->
+    <div id="playlistModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="panel-bg w-full max-w-sm rounded-3xl p-6 border border-zinc-800 shadow-2xl space-y-4 text-left">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 id="playlistModalTitle" class="text-base font-bold text-white">Create New Playlist</h3>
+                <button class="closeModalBtn text-zinc-400 hover:text-white text-lg" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <input type="hidden" id="editingPlaylistId" value="">
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-zinc-300">Playlist Name</label>
+                    <input type="text" id="playlistNameInput" aria-label="Playlist name" placeholder="e.g. Chill Beats" class="w-full px-3 py-2 bg-black border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold mb-1 text-zinc-300">Description</label>
+                    <textarea id="playlistNoteInput" aria-label="Playlist notes" rows="2" placeholder="Optional notes..." class="w-full px-3 py-2 bg-black border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2 pt-2">
+                <button class="closeModalBtn px-4 py-2 text-xs font-semibold bg-zinc-800 rounded-xl hover:bg-zinc-700 text-white transition">Cancel</button>
+                <button id="btnSavePlaylist" class="px-4 py-2 text-xs font-semibold accent-bg text-white rounded-xl shadow-md transition">Save Playlist</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EXPORT PLAYLISTS MODAL -->
+    <div id="exportModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="panel-bg w-full max-w-sm rounded-3xl p-6 border border-zinc-800 shadow-2xl space-y-4 text-left">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-base font-bold text-white">Export Playlists</h3>
+                <button class="closeModalBtn text-zinc-400 hover:text-white text-lg" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="flex items-center justify-between text-xs text-zinc-400">
+                <span><span id="exportCount" class="font-bold accent-text">0</span> selected</span>
+                <button id="btnExportToggleAll" class="accent-text font-semibold hover:underline">Deselect All</button>
+            </div>
+            <div id="exportList" class="space-y-1.5 max-h-60 overflow-y-auto pr-1"></div>
+            <div class="flex justify-end space-x-2 pt-2">
+                <button class="closeModalBtn px-4 py-2 text-xs font-semibold bg-zinc-800 rounded-xl hover:bg-zinc-700 text-white transition">Cancel</button>
+                <button id="btnConfirmExport" class="px-4 py-2 text-xs font-semibold accent-bg text-white rounded-xl shadow-md transition disabled:opacity-50 disabled:pointer-events-none">Export</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD TO PLAYLIST MODAL -->
+    <div id="addToPlaylistModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="panel-bg w-full max-w-sm rounded-3xl p-6 border border-zinc-800 shadow-2xl space-y-4 text-left">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-base font-bold text-white">Add to Playlist</h3>
+                <button class="closeModalBtn text-zinc-400 hover:text-white text-lg" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <p class="text-xs text-zinc-400">Add <span id="modalSelectedCount" class="font-bold accent-text">0</span> track(s) to:</p>
+            <div id="targetPlaylistsList" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+            <div class="flex justify-end pt-2">
+                <button class="closeModalBtn px-4 py-2 text-xs font-semibold bg-zinc-800 rounded-xl hover:bg-zinc-700 text-white transition">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD SONGS TO PLAYLIST MODAL -->
+    <div id="addSongsModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="panel-bg w-full max-w-lg rounded-3xl p-5 border border-zinc-800 shadow-2xl space-y-4 text-left flex flex-col max-h-[85vh]">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-base font-bold text-white">Add Songs to Playlist</h3>
+                <button class="closeModalBtn text-zinc-400 hover:text-white text-lg" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="relative">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-xs"></i>
+                <input type="text" id="addSongsSearch" aria-label="Search library tracks" placeholder="Search library tracks..." class="w-full pl-9 pr-3 py-2 bg-black border border-zinc-800 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500">
+            </div>
+            <div id="addSongsList" class="space-y-1.5 overflow-y-auto flex-1 pr-1 min-h-[200px] max-h-[45vh]"></div>
+            <div class="flex items-center justify-between border-t border-zinc-800 pt-3">
+                <span class="text-xs text-zinc-400"><span id="selectedAddCount">0</span> selected</span>
+                <div class="flex space-x-2">
+                    <button class="closeModalBtn px-4 py-2 text-xs font-semibold bg-zinc-800 rounded-xl hover:bg-zinc-700 text-white transition">Cancel</button>
+                    <button id="btnConfirmAddSongs" class="px-4 py-2 text-xs font-semibold accent-bg text-white rounded-xl shadow-md transition">Add Selected</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONFIRMATION MODAL -->
+    <div id="confirmModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="panel-bg w-full max-w-xs rounded-3xl p-6 border border-zinc-800 shadow-2xl space-y-4 text-center">
+            <div class="w-12 h-12 bg-red-950 text-red-500 rounded-2xl flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <h3 id="confirmTitle" class="text-sm font-bold text-white">Are you sure?</h3>
+            <p id="confirmMessage" class="text-xs text-zinc-400">This action cannot be undone.</p>
+            <div class="flex items-center justify-center space-x-2 pt-2">
+                <button id="btnConfirmCancel" class="px-4 py-2 text-xs font-semibold bg-zinc-800 rounded-xl hover:bg-zinc-700 text-white transition">Cancel</button>
+                <button id="btnConfirmAction" class="px-4 py-2 text-xs font-semibold bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-md transition">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NATIVE FOLDER BROWSER (Android app) -->
+    <div id="folderBrowserModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="panel-bg w-full max-w-md rounded-3xl p-5 border border-zinc-800 shadow-2xl space-y-3 text-left flex flex-col max-h-[88vh]">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-base font-bold text-white">Choose Music Folder</h3>
+                <button class="closeModalBtn text-zinc-400 hover:text-white text-lg" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="fbShortcuts" class="flex flex-wrap gap-2 text-[11px]">
+                <button data-path="Music" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition"><i class="fa-solid fa-music mr-1"></i> Music</button>
+                <button data-path="Download" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition"><i class="fa-solid fa-download mr-1"></i> Download</button>
+                <button data-path="" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition"><i class="fa-solid fa-mobile-screen mr-1"></i> Internal storage</button>
+            </div>
+            <p class="text-[11px] text-zinc-400 leading-relaxed">Open the folder that holds all your artist folders (for example <b>Music</b>), then tap <b>Use This Folder + Subfolders</b>. Every song inside it, however deep, is added.</p>
+            <p id="fbPath" class="text-[11px] font-mono text-zinc-400 truncate"></p>
+            <div id="fbList" class="overflow-y-auto space-y-1.5 min-h-[160px] max-h-[40vh]"></div>
+            <p id="fbInfo" class="text-[11px] text-zinc-400"></p>
+            <div id="fbHelp" class="hidden text-[11px] leading-relaxed text-amber-500 bg-amber-500/10 border border-amber-500/40 rounded-xl p-3 space-y-2">
+                <p id="fbHelpText"></p>
+                <div class="flex flex-wrap gap-2">
+                    <button id="fbGrant" class="px-3 py-1.5 rounded-lg accent-bg text-white font-semibold">Allow access</button>
+                    <button id="fbOpenSettings" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-semibold">Open App Settings</button>
+                </div>
+            </div>
+            <div class="flex flex-wrap justify-end gap-2 pt-1">
+                <button id="fbPickFiles" class="px-3 py-2 text-xs font-semibold bg-zinc-800 rounded-xl hover:bg-zinc-700 text-white transition">Pick files instead</button>
+                <button id="fbUse" class="px-4 py-2 text-xs font-semibold accent-bg text-white rounded-xl shadow-md transition disabled:opacity-50 disabled:pointer-events-none" disabled>Use This Folder + Subfolders</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- APPLICATION LOGIC SCRIPT -->
+    <script>
+        /* ---------- State ---------- */
+        let masterTracks = [];
+        let selectedTrackIds = new Set();
+        let plSelectedTrackIds = new Set();
+        let playlists = safeParse(localStorage.getItem('studio_playlists'), []);
+        if (!Array.isArray(playlists)) playlists = [];
+
+        let currentQueue = [];
+        let currentQueueIndex = -1;
+        let currentTrackId = null;
+        let viewTracks = [];       // tracks currently shown in the Tracks tab (after search filter)
+        let detailTracksArr = [];  // tracks currently shown in the detail view
+        let playHistory = [];      // queue indices played before the current one (for Prev with shuffle)
+
+        const audioEl = new Audio();
+        let audioCtx = null;
+        let sourceNode = null;
+        let gainNode = null;
+        let currentObjectUrl = null;
+        let currentTrackRef = null;
+
+        let isShuffle = false;
+        let repeatMode = 'none';
+
+        /* ---------- Elements ---------- */
+        const selectFolderBtn = document.getElementById('selectFolderBtn');
+        const fallbackFolderInput = document.getElementById('fallbackFolderInput');
+        // Set from script so the HTML validator does not flag the non-standard folder-picker attributes
+        fallbackFolderInput.setAttribute('webkitdirectory', '');
+        fallbackFolderInput.setAttribute('directory', '');
+        const folderBtnText = document.getElementById('folderBtnText');
+        const searchInput = document.getElementById('searchInput');
+        const relinkBanner = document.getElementById('relinkBanner');
+        const toastEl = document.getElementById('toast');
+
+        const playerArt = document.getElementById('playerArt');
+        const playerTrackTitle = document.getElementById('playerTrackTitle');
+        const playerArtistTitle = document.getElementById('playerArtistTitle');
+        const btnPlayPause = document.getElementById('btnPlayPause');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+        const btnShuffle = document.getElementById('btnShuffle');
+        const btnRepeat = document.getElementById('btnRepeat');
+        const seekSlider = document.getElementById('seekSlider');
+        const currentTimeEl = document.getElementById('currentTime');
+        const durationTimeEl = document.getElementById('durationTime');
+
+        const btnExtraControls = document.getElementById('btnExtraControls');
+        const extraControlsPanel = document.getElementById('extraControlsPanel');
+        const gainSlider = document.getElementById('gainSlider');
+        const gainValueDisplay = document.getElementById('gainValueDisplay');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValueDisplay = document.getElementById('speedValueDisplay');
+
+        const btnSelectAll = document.getElementById('btnSelectAll');
+        const btnDeselectAll = document.getElementById('btnDeselectAll');
+        const btnAddSelectedToPlaylist = document.getElementById('btnAddSelectedToPlaylist');
+        const selectedCountEl = document.getElementById('selectedCount');
+
+        const detailView = document.getElementById('detailView');
+        const detailTitle = document.getElementById('detailTitle');
+        const detailSubtitle = document.getElementById('detailSubtitle');
+        const detailTracksList = document.getElementById('detailTracksList');
+        const btnBackFromDetail = document.getElementById('btnBackFromDetail');
+        const btnPlayDetail = document.getElementById('btnPlayDetail');
+
+        const settingsModal = document.getElementById('settingsModal');
+        const openSettingsBtn = document.getElementById('openSettingsBtn');
+
+        const playlistModal = document.getElementById('playlistModal');
+        const btnCreatePlaylist = document.getElementById('btnCreatePlaylist');
+        const btnSavePlaylist = document.getElementById('btnSavePlaylist');
+        const playlistNameInput = document.getElementById('playlistNameInput');
+        const playlistNoteInput = document.getElementById('playlistNoteInput');
+        const editingPlaylistId = document.getElementById('editingPlaylistId');
+
+        const addToPlaylistModal = document.getElementById('addToPlaylistModal');
+        const modalSelectedCount = document.getElementById('modalSelectedCount');
+        const targetPlaylistsList = document.getElementById('targetPlaylistsList');
+
+        const addSongsModal = document.getElementById('addSongsModal');
+        const addSongsSearch = document.getElementById('addSongsSearch');
+        const addSongsList = document.getElementById('addSongsList');
+        const btnConfirmAddSongs = document.getElementById('btnConfirmAddSongs');
+        const selectedAddIds = new Set();
+
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmTitle = document.getElementById('confirmTitle');
+        const confirmMessage = document.getElementById('confirmMessage');
+        const btnConfirmAction = document.getElementById('btnConfirmAction');
+        const btnConfirmCancel = document.getElementById('btnConfirmCancel');
+        let onConfirmCallback = null;
+
+        const btnExportPlaylists = document.getElementById('btnExportPlaylists');
+        const importJsonInput = document.getElementById('importJsonInput');
+
+        /* ---------- Helpers ---------- */
+        function safeParse(str, fallback) {
+            try { return str ? JSON.parse(str) : fallback; } catch (e) { return fallback; }
+        }
+
+        function escapeHtml(str) {
+            return String(str == null ? '' : str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+
+        function formatTime(s) {
+            if (!isFinite(s)) return '00:00';
+            const m = Math.floor(s / 60);
+            const sec = Math.floor(s % 60);
+            return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+        }
+
+        let toastTimer = null;
+        function showToast(msg) {
+            toastEl.textContent = msg;
+            toastEl.classList.remove('hidden');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toastEl.classList.add('hidden'), 2600);
+        }
+
+        // Stable ID: same file => same ID across imports, so playlists keep working.
+        function makeStableId(file, relPath, used) {
+            const s = `${relPath || file.name}|${file.size}|${file.lastModified}`;
+            let h = 5381;
+            for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+            let id = `t${(h >>> 0).toString(36)}${file.size.toString(36)}`;
+            let n = 1;
+            while (used.has(id)) id = `${id.split('_')[0]}_${n++}`;
+            used.add(id);
+            return id;
+        }
+
+        function schedule(fn, delay, timerKey) {
+            clearTimeout(schedule[timerKey]);
+            schedule[timerKey] = setTimeout(fn, delay);
+        }
+        // At most one redraw per 900 ms while tags and covers stream in
+        let renderTimer = null;
+        function scheduleRender() {
+            if (renderTimer) return;
+            renderTimer = setTimeout(() => { renderTimer = null; renderCurrentView(); }, 900);
+        }
+        const schedulePersist = () => schedule(persistTracks, 400, 'persist');
+
+        function isPlayable(t) { return !!(t && (t.file || t.src)); }
+
+        function isNativeApp() {
+            return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+        }
+
+        /* ---------- Init ---------- */
+        window.addEventListener('DOMContentLoaded', () => {
+            initPreferences();
+            setupTabNavigation();
+            setupAudioEngine();
+            setupMediaSession();
+            setupNativeMedia();
+            updateViewToggle();
+            artStoreReady = loadArtStore();
+
+            // Restore library metadata from last session (files themselves can't be restored)
+            const saved = safeParse(localStorage.getItem('loonie_saved_tracks'), []);
+            if (Array.isArray(saved) && saved.length) {
+                masterTracks = saved.filter(t => t && t.id).map(t => ({
+                    id: t.id,
+                    name: t.name || 'Unknown',
+                    artist: t.artist || 'Unknown Artist',
+                    album: t.album || 'Unknown Album',
+                    genre: t.genre || 'Unknown Genre',
+                    path: t.path || '',
+                    artKey: t.artKey || null,
+                    tagged: t.tagged === true,
+                    file: null
+                }));
+                currentQueue = [...masterTracks];
+            }
+
+            updateRelinkBanner();
+            renderCurrentView();
+            renderPlaylistsView();
+            updateSelectionUI();
+            restoreNativeLibrary();
+        });
+
+        function updateRelinkBanner() {
+            const needsRelink = masterTracks.length > 0 && !masterTracks.some(isPlayable);
+            relinkBanner.classList.toggle('hidden', !needsRelink);
+        }
+
+        // Tags are final once read, unless the only reason there is no cover is that image access was off
+        function tagsFinal(t) {
+            if (t.tagged === true) return true;
+            return !!(t._tagsDone && (t.artKey || musicAccess.images !== false));
+        }
+
+        function persistTracks() {
+            const data = masterTracks.map(t => ({
+                id: t.id, name: t.name, artist: t.artist, album: t.album, genre: t.genre, path: t.path || '',
+                artKey: t.artKey || null, tagged: tagsFinal(t)
+            }));
+            try { localStorage.setItem('loonie_saved_tracks', JSON.stringify(data)); } catch (e) { /* quota */ }
+        }
+
+        /* ---------- Theme & Accent ---------- */
+        function setAccentColor(hex) {
+            localStorage.setItem('lt_accent_color', hex);
+            document.documentElement.style.setProperty('--accent-color', hex);
+            document.getElementById('appTitleHeader').style.color = hex;
+        }
+
+        function setAppTheme(theme) {
+            if (!['black', 'dark', 'light'].includes(theme)) theme = 'black';
+            localStorage.setItem('lt_app_theme', theme);
+            document.documentElement.setAttribute('data-theme', theme);
+            document.documentElement.classList.toggle('dark', theme !== 'light');
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', { black: '#000000', dark: '#0f172a', light: '#f1f5f9' }[theme]);
+        }
+
+        function initPreferences() {
+            setAccentColor(localStorage.getItem('lt_accent_color') || '#10b981');
+            setAppTheme(localStorage.getItem('lt_app_theme') || 'black');
+        }
+
+        /* ---------- Audio engine ---------- */
+        function setupAudioEngine() {
+            audioEl.addEventListener('timeupdate', updateProgress);
+            audioEl.addEventListener('loadedmetadata', updateProgress);
+            audioEl.addEventListener('ended', handleTrackEnded);
+            audioEl.addEventListener('play', () => { btnPlayPause.innerHTML = '<i class="fa-solid fa-pause"></i>'; });
+            audioEl.addEventListener('pause', () => { btnPlayPause.innerHTML = '<i class="fa-solid fa-play"></i>'; });
+
+            gainSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                gainValueDisplay.innerText = `${Math.round(val * 100)}%`;
+                if (gainNode) gainNode.gain.value = val;
+            });
+
+            speedSlider.addEventListener('input', (e) => {
+                const val = parseFloat(e.target.value);
+                speedValueDisplay.innerText = `${val.toFixed(1)}x`;
+                audioEl.defaultPlaybackRate = val; // survives src changes
+                audioEl.playbackRate = val;
+            });
+        }
+
+        function initWebAudioIfNeeded() {
+            if (!audioCtx) {
+                const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioCtxClass) {
+                    audioCtx = new AudioCtxClass();
+                    sourceNode = audioCtx.createMediaElementSource(audioEl);
+                    gainNode = audioCtx.createGain();
+                    sourceNode.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    gainNode.gain.value = parseFloat(gainSlider.value);
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        /* ---------- Media Session (lock screen / notification controls) ---------- */
+        function setupMediaSession() {
+            if (!('mediaSession' in navigator)) return;
+            const set = (action, fn) => { try { navigator.mediaSession.setActionHandler(action, fn); } catch (e) {} };
+            set('play', () => audioEl.play());
+            set('pause', () => audioEl.pause());
+            set('previoustrack', playPrevTrack);
+            set('nexttrack', playNextTrack);
+            set('seekto', (d) => { if (d.seekTime != null) audioEl.currentTime = d.seekTime; });
+        }
+
+        function updateMediaSession(track) {
+            if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+            const art = getArt(track);
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: track.name,
+                artist: track.artist,
+                album: track.album,
+                artwork: art ? [{ src: art.url, sizes: ART_SIZE + 'x' + ART_SIZE, type: 'image/jpeg' }] : []
+            });
+        }
+
+        /* ---------- Album art ---------- */
+        const ART_SIZE = 256;
+        const artCache = new Map();    
+        const artPending = new Map();  
+        let artChain = Promise.resolve();
+        let artStoreReady = Promise.resolve();
+
+        let artDbPromise = null;
+        function getArtDb() {
+            if (!artDbPromise) {
+                artDbPromise = new Promise((resolve) => {
+                    try {
+                        const rq = indexedDB.open('lt_art', 1);
+                        rq.onupgradeneeded = () => rq.result.createObjectStore('thumbs');
+                        rq.onsuccess = () => resolve(rq.result);
+                        rq.onerror = () => resolve(null);
+                    } catch (e) { resolve(null); }
+                });
+            }
+            return artDbPromise;
+        }
+
+        async function loadArtStore() {
+            const db = await getArtDb();
+            if (!db) return;
+            await new Promise((resolve) => {
+                try {
+                    const rq = db.transaction('thumbs').objectStore('thumbs').openCursor();
+                    rq.onsuccess = () => {
+                        const c = rq.result;
+                        if (!c) { resolve(); return; }
+                        if (!artCache.has(c.key) && c.value instanceof Blob) {
+                            artCache.set(c.key, { key: c.key, blob: c.value, url: URL.createObjectURL(c.value) });
+                        }
+                        c.continue();
+                    };
+                    rq.onerror = () => resolve();
+                } catch (e) { resolve(); }
+            });
+            scheduleRender();
+        }
+
+        function saveArtToStore(key, blob) {
+            getArtDb().then((db) => {
+                if (!db) return;
+                try { db.transaction('thumbs', 'readwrite').objectStore('thumbs').put(blob, key); } catch (e) { /* ignore */ }
+            });
+        }
+
+        async function pruneArtStore() {
+            if (!masterTracks.length) return;
+            if (masterTracks.some((t) => isPlayable(t) && !t._tagsDone)) return;
+            const keep = new Set(masterTracks.map((t) => t.artKey).filter(Boolean));
+            const db = await getArtDb();
+            if (!db) return;
+            try {
+                const store = db.transaction('thumbs', 'readwrite').objectStore('thumbs');
+                const rq = store.openKeyCursor();
+                rq.onsuccess = () => {
+                    const c = rq.result;
+                    if (!c) return;
+                    if (!keep.has(c.key)) store.delete(c.key);
+                    c.continue();
+                };
+            } catch (e) { /* ignore */ }
+        }
+
+        function getArt(track) {
+            return track && track.artKey ? (artCache.get(track.artKey) || null) : null;
+        }
+
+        function pictureKey(data) {
+            const n = data.length;
+            const step = Math.max(1, Math.floor(n / 512));
+            let h = 2166136261;
+            for (let i = 0; i < n; i += step) {
+                h ^= data[i] & 255;
+                h = Math.imul(h, 16777619) >>> 0;
+            }
+            return n + '_' + h.toString(36);
+        }
+
+        function enqueueArt(fn) {
+            const run = artChain.then(fn);
+            artChain = run.catch(() => {});
+            return run;
+        }
+
+        function loadImageFromBlob(blob) {
+            return new Promise((resolve, reject) => {
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+                img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image')); };
+                img.src = url;
+            });
+        }
+
+        async function makeThumbBlob(blob) {
+            let source;
+            let w;
+            let h;
+            if (window.createImageBitmap) {
+                source = await createImageBitmap(blob);
+                w = source.width;
+                h = source.height;
+            } else {
+                source = await loadImageFromBlob(blob);
+                w = source.naturalWidth;
+                h = source.naturalHeight;
+            }
+            const side = Math.min(w, h);
+            if (!side) throw new Error('empty image');
+            const out = Math.min(ART_SIZE, side);
+            const canvas = document.createElement('canvas');
+            canvas.width = out;
+            canvas.height = out;
+            canvas.getContext('2d').drawImage(source, (w - side) / 2, (h - side) / 2, side, side, 0, 0, out, out);
+            if (source.close) source.close();
+            return await new Promise((resolve, reject) => {
+                canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob'))), 'image/jpeg', 0.82);
+            });
+        }
+
+        function registerArt(key, makeBlob) {
+            if (artCache.has(key)) return Promise.resolve(key);
+            if (artPending.has(key)) return artPending.get(key);
+            const p = enqueueArt(async () => {
+                const thumb = await makeThumbBlob(await makeBlob());
+                artCache.set(key, { key: key, blob: thumb, url: URL.createObjectURL(thumb) });
+                saveArtToStore(key, thumb);
+                return key;
+            }).catch(() => null).then((k) => { artPending.delete(key); return k; });
+            artPending.set(key, p);
+            return p;
+        }
+
+        function blobToBase64(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        /* ---------- Native bridge helpers ---------- */
+        function nativeCall(plugin, method, opts) {
+            const cap = window.Capacitor;
+            const p = cap && cap.Plugins && cap.Plugins[plugin];
+            if (p && typeof p[method] === 'function') return p[method](opts || {});
+            if (cap && cap.nativePromise) return cap.nativePromise(plugin, method, opts || {});
+            return Promise.reject(new Error(plugin + ' plugin unavailable'));
+        }
+
+        function nativeListen(plugin, event, cb) {
+            const cap = window.Capacitor;
+            try {
+                const p = cap && cap.Plugins && cap.Plugins[plugin];
+                if (p && typeof p.addListener === 'function') return p.addListener(event, cb);
+                if (cap && typeof cap.addListener === 'function') return cap.addListener(plugin, event, cb);
+            } catch (e) { /* ignore */ }
+            return null;
+        }
+
+        /* ---------- Native media controls ---------- */
+        let nativeMediaOk = false;
+        let lastSentArtKey = '';
+
+        function setupNativeMedia() {
+            if (!isNativeApp()) return;
+            nativeCall('MediaControls', 'checkMusicAccess').then(() => {
+                nativeMediaOk = true;
+                nativeListen('MediaControls', 'mediaAction', handleNativeMediaAction);
+                nativeListen('MediaControls', 'launchAudio', (e) => { if (e && e.uri) playExternalUri(e.uri); });
+                nativeCall('MediaControls', 'getLaunchAudio').then((r) => { if (r && r.uri) playExternalUri(r.uri); }).catch(() => {});
+                ['play', 'pause', 'seeked', 'ratechange', 'loadedmetadata'].forEach((ev) => audioEl.addEventListener(ev, syncNativeSession));
+                syncNativeSession();
+            }).catch(() => { nativeMediaOk = false; });
+        }
+
+        function handleNativeMediaAction(e) {
+            if (!e) return;
+            switch (e.action) {
+                case 'play':
+                    if (audioEl.src) { initWebAudioIfNeeded(); audioEl.play().catch(() => {}); }
+                    break;
+                case 'pause':
+                    audioEl.pause();
+                    break;
+                case 'next':
+                    playNextTrack();
+                    break;
+                case 'previous':
+                    playPrevTrack();
+                    break;
+                case 'seekto':
+                    if (isFinite(e.position)) audioEl.currentTime = e.position;
+                    break;
+            }
+        }
+
+        function syncNativeSession() {
+            if (!nativeMediaOk || !currentTrackRef) return;
+            const track = currentTrackRef;
+            const art = getArt(track);
+            const payload = {
+                title: track.name || '',
+                artist: track.artist || '',
+                album: track.album || '',
+                durationMs: isFinite(audioEl.duration) ? Math.round(audioEl.duration * 1000) : 0,
+                positionMs: Math.round((audioEl.currentTime || 0) * 1000),
+                playing: !audioEl.paused && !audioEl.ended,
+                speed: audioEl.playbackRate || 1,
+                artKey: art ? art.key : ''
+            };
+            const send = () => nativeCall('MediaControls', 'updateSession', payload).catch(() => {});
+            if (art && art.key !== lastSentArtKey) {
+                blobToBase64(art.blob).then((b64) => {
+                    payload.art = b64;
+                    lastSentArtKey = art.key;
+                    send();
+                }).catch(send);
+            } else {
+                if (!art) lastSentArtKey = '';
+                send();
+            }
+        }
+
+        function playExternalUri(uri) {
+            const cap = window.Capacitor;
+            if (!uri || !cap || !cap.convertFileSrc) return;
+            let name = '';
+            try { name = decodeURIComponent(String(uri).split('?')[0].split('/').pop() || ''); } catch (e) { name = ''; }
+            name = name.split(/[\/:]/).pop().replace(/\.[A-Za-z0-9]{2,5}$/, '').trim();
+            const track = {
+                id: 'ext_' + Date.now().toString(36),
+                name: name && !/^\d+$/.test(name) ? name : 'Audio file',
+                artist: 'Unknown Artist',
+                album: 'Unknown Album',
+                genre: 'Unknown Genre',
+                path: String(uri),
+                file: null,
+                src: cap.convertFileSrc(uri),
+                external: true
+            };
+            setQueue([track], 0);
+            playTrack(track);
+            readTags(track, () => {
+                if (currentTrackRef === track) {
+                    playerTrackTitle.innerText = track.name;
+                    playerArtistTitle.innerText = `${track.artist} • ${track.album}`;
+                }
+            });
+        }
+
+        /* ---------- Folder import ---------- */
+        selectFolderBtn.addEventListener('click', openFolder);
+        document.getElementById('btnRelink').addEventListener('click', openFolder);
+
+        async function openFolder() {
+            if (isNativeApp()) { openNativeFolderBrowser(); return; }
+
+            if ('showDirectoryPicker' in window) {
+                try {
+                    const dirHandle = await window.showDirectoryPicker();
+                    folderBtnText.innerText = dirHandle.name;
+                    showToast('Scanning folder…');
+                    const entries = await scanDirectoryHandle(dirHandle);
+                    ingestFiles(entries);
+                } catch (err) {
+                    if (err.name !== 'AbortError') fallbackFolderInput.click();
+                }
+            } else {
+                fallbackFolderInput.click();
+            }
+        }
+
+        fallbackFolderInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            if (!files.length) return;
+            const entries = files
+                .filter(f => isAudioFile(f.name))
+                .map(f => ({ file: f, rel: f.webkitRelativePath || f.name, folders: (f.webkitRelativePath || '').split('/').slice(1, -1) }));
+            ingestFiles(entries);
+            e.target.value = '';
+        });
+
+        async function scanDirectoryHandle(dirHandle, prefix = '', out = []) {
+            for await (const [name, handle] of dirHandle.entries()) {
+                if (handle.kind === 'file') {
+                    if (isAudioFile(name)) out.push({ file: await handle.getFile(), rel: prefix + name, folders: prefix.split('/').filter(Boolean) });
+                } else if (handle.kind === 'directory') {
+                    await scanDirectoryHandle(handle, prefix + name + '/', out);
+                }
+            }
+            return out;
+        }
+
+        function isAudioFile(filename) {
+            const lower = filename.toLowerCase();
+            return ['.mp3', '.flac', '.wav', '.m4a', '.ogg', '.aac', '.opus'].some(ext => lower.endsWith(ext));
+        }
+
+        function ingestFiles(entries, opts = {}) {
+            if (!entries.length) { showToast('No audio files found in that folder.'); return; }
+
+            const previous = new Map(masterTracks.map(t => [t.id, t]));
+            const usedIds = new Set();
+
+            masterTracks = entries.map((e) => {
+                const fileLike = e.file || { name: e.name, size: e.size || 0, lastModified: e.mtime || 0 };
+                const id = makeStableId(fileLike, e.rel, usedIds);
+                const track = buildTrack(id, fileLike, e.rel, previous.get(id), e.folders);
+                track.file = e.file || null;
+                track.src = e.src || null;
+                track.coverSrc = e.coverSrc || null;
+                track.coverKey = e.coverKey || null;
+                return track;
+            });
+
+            selectedTrackIds.clear();
+            currentQueue = [...masterTracks];
+            currentQueueIndex = currentTrackId ? currentQueue.findIndex(t => t.id === currentTrackId) : -1;
+            playHistory = [];
+
+            persistTracks();
+            updateRelinkBanner();
+            renderCurrentView();
+            updateSelectionUI();
+            if (!opts.quiet) showToast(`${masterTracks.length} track(s) loaded`);
+
+            queueTagReads(masterTracks);
+        }
+
+        function buildTrack(id, file, rel, prev, folders) {
+            const nameWithoutExt = file.name.includes('.') ? file.name.substring(0, file.name.lastIndexOf('.')) : file.name;
+            let artist = 'Unknown Artist';
+            let title = nameWithoutExt;
+
+            if (nameWithoutExt.includes(' - ')) {
+                const parts = nameWithoutExt.split(' - ');
+                artist = parts[0].trim() || artist;
+                title = parts.slice(1).join(' - ').trim() || nameWithoutExt;
+            }
+
+            let album = 'Unknown Album';
+            if (folders && folders.length) {
+                if (artist === 'Unknown Artist') artist = folders[0];
+                if (folders.length >= 2) album = folders[1];
+            }
+            const keep = (old, fresh, unknown) => (old && old !== unknown ? old : fresh);
+            const reuseArt = !!(prev && tagsFinal(prev) && (!prev.artKey || artCache.has(prev.artKey)));
+
+            return {
+                id,
+                file,
+                path: rel,
+                artKey: reuseArt ? (prev.artKey || null) : undefined,
+                _tagsDone: reuseArt,
+                name: prev && prev.name ? prev.name : title,
+                artist: prev ? keep(prev.artist, artist, 'Unknown Artist') : artist,
+                album: prev ? keep(prev.album, album, 'Unknown Album') : album,
+                genre: prev ? prev.genre : 'Unknown Genre'
+            };
+        }
+
+        function cleanTag(v) {
+            return v == null ? '' : String(v).replace(/\u0000/g, '').trim();
+        }
+
+        function readTags(track, done) {
+            if (track._tagsDone) { if (done) done(); return; }
+            if (track._waiters) { if (done) track._waiters.push(done); return; }
+            track._waiters = done ? [done] : [];
+
+            let settled = false;
+            let timer = null;
+
+            const finish = () => {
+                track._tagsDone = true;
+                const waiters = track._waiters || [];
+                track._waiters = null;
+                waiters.forEach((fn) => { try { fn(); } catch (e) { /* ignore */ } });
+                if (track === currentTrackRef) {
+                    setPlayerArt(track);
+                    updateMediaSession(track);
+                    syncNativeSession();
+                }
+            };
+
+            const settle = (picture) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                if (picture && picture.data && picture.data.length > 200) {
+                    const data = picture.data;
+                    const key = 'p' + pictureKey(data);
+                    registerArt(key, () => new Blob([new Uint8Array(data)], { type: picture.format || 'image/jpeg' }))
+                        .then((k) => { track.artKey = k || null; scheduleRender(); finish(); });
+                } else if (track.coverSrc && track.coverKey) {
+                    const src = track.coverSrc;
+                    registerArt(track.coverKey, async () => {
+                        const resp = await fetch(src);
+                        if (!resp.ok) throw new Error('cover ' + resp.status);
+                        return await resp.blob();
+                    }).then((k) => { track.artKey = k || null; scheduleRender(); finish(); });
+                } else {
+                    track.artKey = null;
+                    finish();
+                }
+            };
+
+            timer = setTimeout(() => settle(null), 8000);
+
+            const source = track.file || track.src;
+            if (!window.jsmediatags || !source) { settle(null); return; }
+            try {
+                window.jsmediatags.read(source, {
+                    onSuccess: (tag) => {
+                        const t = (tag && tag.tags) || {};
+                        const title = cleanTag(t.title);
+                        const artist = cleanTag(t.artist);
+                        const album = cleanTag(t.album);
+                        const genre = cleanTag(t.genre);
+                        if (title) track.name = title;
+                        if (artist) track.artist = artist;
+                        if (album) track.album = album;
+                        if (genre) track.genre = genre;
+                        scheduleRender();
+                        schedulePersist();
+                        settle(t.picture);
+                    },
+                    onError: () => settle(null)
+                });
+            } catch (e) { settle(null); }
+        }
+
+        let tagQueueToken = 0;
+        function queueTagReads(list) {
+            const token = ++tagQueueToken;
+            const pending = list.filter((t) => isPlayable(t) && !t._tagsDone);
+            let index = 0;
+            let active = 0;
+            const pump = () => {
+                if (token !== tagQueueToken) return;
+                while (active < 4 && index < pending.length) {
+                    active++;
+                    readTags(pending[index++], () => { active--; pump(); });
+                }
+                if (active === 0 && index >= pending.length) {
+                    renderCurrentView();
+                    persistTracks();
+                    pruneArtStore();
+                }
+            };
+            pump();
+        }
+
+        function setPlayerArt(track) {
+            const art = getArt(track);
+            playerArt.innerHTML = art
+                ? `<img src="${art.url}" alt="" class="w-full h-full object-cover">`
+                : '<i class="fa-solid fa-music"></i>';
+        }
+
+        function loadArtFor(track) {
+            setPlayerArt(track);
+            if (track.artKey === undefined) readTags(track, () => {});
+        }
+
+        /* ---------- Navigation & views ---------- */
+        function setupTabNavigation() {
+            const tabs = document.querySelectorAll('#navTabs button');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => {
+                        t.classList.remove('active', 'border-b-2', 'accent-text', 'font-semibold');
+                        t.classList.add('text-zinc-400', 'font-medium');
+                    });
+                    tab.classList.add('active', 'border-b-2', 'accent-text', 'font-semibold');
+                    tab.classList.remove('text-zinc-400', 'font-medium');
+
+                    const target = tab.getAttribute('data-tab');
+                    document.querySelectorAll('.tab-view').forEach(v => v.classList.add('hidden'));
+                    detailView.classList.add('hidden');
+                    document.getElementById(`view-${target}`).classList.remove('hidden');
+                    detailCtx = null;
+                    updateViewToggle();
+                    renderCurrentView();
+                });
+            });
+            searchInput.addEventListener('input', renderCurrentView);
+        }
+
+        function getActiveTab() {
+            const active = document.querySelector('#navTabs button.active');
+            return active ? active.getAttribute('data-tab') : 'tracks';
+        }
+
+        /* ---------- View modes (list / grid) ---------- */
+        const VIEW_KEY = 'lt_view_modes';
+        const VIEW_TABS = ['tracks', 'artists', 'albums', 'genres'];
+        const viewModes = { tracks: 'list', artists: 'grid', albums: 'grid', genres: 'grid' };
+        (function loadViewModes() {
+            const stored = safeParse(localStorage.getItem(VIEW_KEY), {});
+            if (!stored || typeof stored !== 'object') return;
+            VIEW_TABS.forEach((tab) => {
+                if (stored[tab] === 'list' || stored[tab] === 'grid') viewModes[tab] = stored[tab];
+            });
+        })();
+
+        const btnViewToggle = document.getElementById('btnViewToggle');
+        const detailArt = document.getElementById('detailArt');
+        let detailCtx = null; 
+
+        function updateViewToggle() {
+            const mode = viewModes[getActiveTab()];
+            btnViewToggle.classList.toggle('hidden', !mode);
+            if (!mode) return;
+            btnViewToggle.innerHTML = mode === 'grid' ? '<i class="fa-solid fa-list"></i>' : '<i class="fa-solid fa-grip"></i>';
+            const label = mode === 'grid' ? 'Switch to list view' : 'Switch to grid view';
+            btnViewToggle.setAttribute('aria-label', label);
+            btnViewToggle.title = label;
+        }
+
+        btnViewToggle.addEventListener('click', () => {
+            const tab = getActiveTab();
+            if (!viewModes[tab]) return;
+            viewModes[tab] = viewModes[tab] === 'grid' ? 'list' : 'grid';
+            try { localStorage.setItem(VIEW_KEY, JSON.stringify(viewModes)); } catch (e) { /* ignore */ }
+            updateViewToggle();
+            renderCurrentView();
+        });
+
+        const GROUP_ICON = { artist: 'fa-user-astronaut', album: 'fa-compact-disc', genre: 'fa-tags' };
+
+        function artImg(art, cls) {
+            return `<img src="${art.url}" alt="" loading="lazy" decoding="async" class="${cls}">`;
+        }
+
+        function rowThumbHtml(track, isPlaying) {
+            const art = getArt(track);
+            return `<div class="relative w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-400 text-xs flex-shrink-0 overflow-hidden">
+                ${art ? artImg(art, 'w-full h-full object-cover') : '<i class="fa-solid fa-music"></i>'}
+                ${isPlaying ? '<span class="absolute inset-0 bg-black/50 flex items-center justify-center"><i class="fa-solid fa-volume-high accent-text animate-pulse"></i></span>' : ''}
+            </div>`;
+        }
+
+        function groupThumbHtml(art, icon) {
+            return `<div class="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-400 text-sm flex-shrink-0 overflow-hidden">
+                ${art ? artImg(art, 'w-full h-full object-cover') : `<i class="fa-solid ${icon}"></i>`}
+            </div>`;
+        }
+
+        function groupArt(tracks) {
+            for (const t of tracks) {
+                const a = getArt(t);
+                if (a) return a;
+            }
+            return null;
+        }
+
+        function renderCurrentView() {
+            if (detailCtx) { refreshDetail(); return; }
+            const tab = getActiveTab();
+            const filter = searchInput.value.toLowerCase().trim();
+            if (tab === 'tracks') renderTracksView(filter);
+            else if (tab === 'artists') renderGroupView('artist', filter);
+            else if (tab === 'albums') renderGroupView('album', filter);
+            else if (tab === 'genres') renderGroupView('genre', filter);
+            else if (tab === 'playlists') renderPlaylistsView();
+        }
+
+        function renderTracksView(filter = '') {
+            const list = document.getElementById('tracksList');
+            list.innerHTML = '';
+            list.className = 'space-y-1.5';
+
+            if (!masterTracks.length) {
+                viewTracks = [];
+                list.innerHTML = `
+                    <div class="text-center py-16 bg-zinc-900/40 rounded-3xl border border-dashed border-zinc-800 p-6">
+                        <div class="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-500 text-2xl"><i class="fa-solid fa-folder-open"></i></div>
+                        <h3 class="text-base font-bold text-zinc-200">No Audio Files Loaded</h3>
+                        <p class="text-xs text-zinc-400 max-w-sm mx-auto mt-1 mb-5">Select a folder from your device storage to import tracks cleanly.</p>
+                        <button onclick="document.getElementById('selectFolderBtn').click()" class="accent-bg hover:opacity-90 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-md transition">Select Music Directory</button>
+                    </div>`;
+                return;
+            }
+
+            const filtered = masterTracks.filter(t =>
+                t.name.toLowerCase().includes(filter) ||
+                t.artist.toLowerCase().includes(filter) ||
+                t.album.toLowerCase().includes(filter));
+            viewTracks = filtered;
+
+            if (!filtered.length) {
+                list.innerHTML = `<div class="text-center py-12 text-zinc-500 text-xs">No matching tracks found.</div>`;
+                return;
+            }
+
+            const grid = viewModes.tracks === 'grid';
+            if (grid) list.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3';
+
+            const frag = document.createDocumentFragment();
+            filtered.forEach(track => {
+                const isSelected = selectedTrackIds.has(track.id);
+                const isPlaying = currentTrackId === track.id;
+                const offline = !isPlayable(track);
+                const art = getArt(track);
+                const card = document.createElement('div');
+
+                if (grid) {
+                    card.className = `panel-bg rounded-2xl border overflow-hidden transition cursor-pointer relative ${isPlaying ? 'accent-border' : 'border-zinc-800'} ${offline ? 'opacity-60' : ''}`;
+                    card.innerHTML = `
+                        <div class="relative aspect-square bg-black/40 flex items-center justify-center text-zinc-500 text-4xl" onclick="playTrackById('${track.id}', 'tracks')">
+                            ${art ? artImg(art, 'w-full h-full object-cover') : '<i class="fa-solid fa-music"></i>'}
+                            ${isPlaying ? '<span class="absolute inset-0 bg-black/50 flex items-center justify-center"><i class="fa-solid fa-volume-high accent-text animate-pulse text-xl"></i></span>' : ''}
+                        </div>
+                        <label class="on-art absolute top-2 left-2 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer">
+                            <input type="checkbox" aria-label="Select track" ${isSelected ? 'checked' : ''} class="track-checkbox w-4 h-4 cursor-pointer">
+                        </label>
+                        <button aria-label="Add to playlist" onclick="event.stopPropagation(); openAddToPlaylistModal(['${track.id}'])" class="on-art absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center text-xs">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                        <div class="p-3 min-w-0" onclick="playTrackById('${track.id}', 'tracks')">
+                            <p class="text-xs font-bold truncate ${isPlaying ? 'accent-text' : ''}">${escapeHtml(track.name)}</p>
+                            <p class="text-[11px] text-zinc-400 truncate">${escapeHtml(track.artist)}</p>
+                        </div>
+                    `;
+                } else {
+                    card.className = `panel-bg p-3 rounded-xl border transition flex items-center justify-between space-x-3 cursor-pointer ${isPlaying ? 'accent-border' : 'border-zinc-800'} ${offline ? 'opacity-60' : ''}`;
+                    card.innerHTML = `
+                        <div class="flex items-center space-x-3 min-w-0 flex-1">
+                            <input type="checkbox" aria-label="Select track" ${isSelected ? 'checked' : ''} class="track-checkbox w-4 h-4 rounded cursor-pointer">
+                            <div class="flex items-center space-x-3 min-w-0 flex-1" onclick="playTrackById('${track.id}', 'tracks')">
+                                ${rowThumbHtml(track, isPlaying)}
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-xs font-bold truncate ${isPlaying ? 'accent-text' : ''}">${escapeHtml(track.name)}</p>
+                                    <p class="text-[11px] text-zinc-400 truncate">${escapeHtml(track.artist)} • ${escapeHtml(track.album)}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <button aria-label="Add to playlist" onclick="event.stopPropagation(); openAddToPlaylistModal(['${track.id}'])" class="p-2 text-zinc-400 hover:text-white transition text-xs">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                    `;
+                }
+
+                card.querySelector('.track-checkbox').addEventListener('change', (e) => {
+                    e.stopPropagation();
+                    if (e.target.checked) selectedTrackIds.add(track.id);
+                    else selectedTrackIds.delete(track.id);
+                    updateSelectionUI();
+                });
+
+                frag.appendChild(card);
+            });
+            list.appendChild(frag);
+        }
+
+        function renderGroupView(groupKey, filter = '') {
+            const container = document.getElementById(`${groupKey}sGrid`);
+            if (!container) return;
+            container.innerHTML = '';
+
+            const grid = viewModes[groupKey + 's'] !== 'list';
+            container.className = grid ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3' : 'space-y-1.5';
+
+            const groups = {};
+            masterTracks.forEach(t => {
+                const val = t[groupKey] || 'Unknown';
+                (groups[val] = groups[val] || []).push(t);
+            });
+
+            const keys = Object.keys(groups).filter(k => k.toLowerCase().includes(filter)).sort((a, b) => a.localeCompare(b));
+            if (!keys.length) {
+                container.innerHTML = `<div class="col-span-full text-center py-12 text-zinc-500 text-xs">No items found.</div>`;
+                return;
+            }
+
+            const frag = document.createDocumentFragment();
+            keys.forEach(key => {
+                const tracks = groups[key];
+                const art = groupArt(tracks);
+                const card = document.createElement('div');
+
+                if (grid) {
+                    card.className = 'panel-bg rounded-2xl border border-zinc-800 overflow-hidden transition cursor-pointer hover:opacity-90';
+                    card.innerHTML = `
+                        <div class="aspect-square bg-black/40 flex items-center justify-center text-zinc-500 text-4xl">
+                            ${art ? artImg(art, 'w-full h-full object-cover') : `<i class="fa-solid ${GROUP_ICON[groupKey]}"></i>`}
+                        </div>
+                        <div class="p-3 min-w-0">
+                            <h3 class="text-xs font-bold truncate">${escapeHtml(key)}</h3>
+                            <p class="text-[10px] text-zinc-400">${tracks.length} track(s)</p>
+                        </div>
+                    `;
+                } else {
+                    card.className = 'panel-bg p-3 rounded-xl border border-zinc-800 transition cursor-pointer flex items-center space-x-3';
+                    card.innerHTML = `
+                        ${groupThumbHtml(art, GROUP_ICON[groupKey])}
+                        <div class="min-w-0 flex-1">
+                            <h3 class="text-xs font-bold truncate">${escapeHtml(key)}</h3>
+                            <p class="text-[10px] text-zinc-400">${tracks.length} track(s)</p>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-zinc-500 text-xs"></i>
+                    `;
+                }
+                card.addEventListener('click', () => openDetailView(key, () => masterTracks.filter(t => (t[groupKey] || 'Unknown') === key)));
+                frag.appendChild(card);
+            });
+            container.appendChild(frag);
+        }
+
+        function openDetailView(title, source, playlistId) {
+            detailCtx = { title: title, playlistId: playlistId || null, getTracks: typeof source === 'function' ? source : () => source };
+            plSelectedTrackIds.clear();
+            document.querySelectorAll('.tab-view').forEach(v => v.classList.add('hidden'));
+            detailView.classList.remove('hidden');
+            detailTracksList.scrollTop = 0;
+            refreshDetail();
+        }
+
+        function refreshDetail() {
+            if (!detailCtx) return;
+            const tracks = detailCtx.getTracks();
+            detailTitle.innerText = detailCtx.title;
+            detailSubtitle.innerText = `${tracks.length} track(s)`;
+            detailTracksArr = tracks;
+
+            const isPlaylist = !!detailCtx.playlistId;
+            document.getElementById('playlistEditActions').classList.toggle('hidden', !isPlaylist);
+            document.getElementById('playlistBatchToolbar').classList.toggle('hidden', !isPlaylist || !tracks.length);
+
+            const art = groupArt(tracks);
+            detailArt.classList.toggle('hidden', !art);
+            detailArt.innerHTML = art ? artImg(art, 'w-full h-full object-cover') : '';
+
+            const scrollTop = detailTracksList.scrollTop;
+            detailTracksList.innerHTML = '';
+            const frag = document.createDocumentFragment();
+            const plId = detailCtx.playlistId;
+
+            tracks.forEach((track, idx) => {
+                const isSelected = plSelectedTrackIds.has(track.id);
+                const isPlaying = currentTrackId === track.id;
+                const card = document.createElement('div');
+                
+                const checkboxHtml = plId ? `
+                    <input type="checkbox" aria-label="Select track" ${isSelected ? 'checked' : ''} class="pl-track-checkbox w-4 h-4 rounded cursor-pointer mr-2">
+                ` : '';
+
+                const editBtns = plId ? `
+                    <div class="flex items-center flex-shrink-0 ml-1">
+                        <button aria-label="Move up" ${idx === 0 ? 'disabled' : ''} onclick="event.stopPropagation(); movePlaylistTrack('${escapeHtml(plId)}', '${track.id}', -1)" class="p-2 text-zinc-400 hover:text-white transition text-xs disabled:opacity-20 disabled:pointer-events-none"><i class="fa-solid fa-chevron-up"></i></button>
+                        <button aria-label="Move down" ${idx === tracks.length - 1 ? 'disabled' : ''} onclick="event.stopPropagation(); movePlaylistTrack('${escapeHtml(plId)}', '${track.id}', 1)" class="p-2 text-zinc-400 hover:text-white transition text-xs disabled:opacity-20 disabled:pointer-events-none"><i class="fa-solid fa-chevron-down"></i></button>
+                        <button aria-label="Remove from playlist" onclick="event.stopPropagation(); removeFromPlaylist('${escapeHtml(plId)}', '${track.id}')" class="p-2 text-zinc-400 hover:text-red-500 transition text-sm"><i class="fa-solid fa-circle-minus"></i></button>
+                    </div>` : '';
+
+                card.className = `p-3 rounded-xl bg-black/40 border flex items-center justify-between cursor-pointer hover:opacity-80 transition ${isPlaying ? 'accent-border' : 'border-zinc-800'} ${isPlayable(track) ? '' : 'opacity-60'} ${isSelected ? 'bg-zinc-800/40' : ''}`;
+                card.innerHTML = `
+                    <div class="flex items-center space-x-3 min-w-0 flex-1">
+                        ${checkboxHtml}
+                        <div class="flex items-center space-x-3 min-w-0 flex-1" onclick="playTrackById('${track.id}', 'detail')">
+                            ${rowThumbHtml(track, isPlaying)}
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs font-bold truncate ${isPlaying ? 'accent-text' : ''}">${escapeHtml(track.name)}</p>
+                                <p class="text-[10px] text-zinc-400 truncate">${escapeHtml(track.artist)} • ${escapeHtml(track.album)}</p>
+                            </div>
+                        </div>
+                    </div>${editBtns}
+                `;
+
+                if (plId) {
+                    const chk = card.querySelector('.pl-track-checkbox');
+                    chk.addEventListener('change', (e) => {
+                        e.stopPropagation();
+                        if (e.target.checked) plSelectedTrackIds.add(track.id);
+                        else plSelectedTrackIds.delete(track.id);
+                        updatePlSelectionUI();
+                        card.classList.toggle('bg-zinc-800/40', e.target.checked);
+                    });
+                }
+
+                frag.appendChild(card);
+            });
+
+            if (!tracks.length) {
+                const empty = document.createElement('div');
+                empty.className = 'text-center py-10 text-zinc-500 text-xs';
+                empty.textContent = plId ? 'This playlist is empty. Add songs with the + button in your library.' : 'Nothing here.';
+                frag.appendChild(empty);
+            }
+            detailTracksList.appendChild(frag);
+            detailTracksList.scrollTop = scrollTop;
+            updatePlSelectionUI();
+        }
+
+        function updatePlSelectionUI() {
+            const el = document.getElementById('plSelectedCount');
+            if (el) el.innerText = plSelectedTrackIds.size;
+            const all = document.getElementById('btnPlSelectAll');
+            if (all) all.innerText = (detailTracksArr.length && detailTracksArr.every(t => plSelectedTrackIds.has(t.id))) ? 'Deselect All' : 'Select All';
+        }
+
+        btnBackFromDetail.addEventListener('click', () => {
+            detailCtx = null;
+            plSelectedTrackIds.clear();
+            detailView.classList.add('hidden');
+            document.getElementById(`view-${getActiveTab()}`).classList.remove('hidden');
+            renderCurrentView();
+        });
+
+        btnPlayDetail.addEventListener('click', () => {
+            const first = detailTracksArr.find(isPlayable);
+            if (!first) { showToast('Re-open your music folder to play these tracks.'); return; }
+            playTrackById(first.id, 'detail');
+        });
+
+        /* ---------- Playlist Management & Editing ---------- */
+        function renderPlaylistsView() {
+            const container = document.getElementById('playlistsList');
+            container.innerHTML = '';
+            if (!playlists.length) {
+                container.innerHTML = `<div class="col-span-full text-center py-12 text-zinc-500 text-xs">No playlists created yet.</div>`;
+                return;
+            }
+
+            playlists.forEach(pl => {
+                const card = document.createElement('div');
+                card.className = "panel-bg p-4 rounded-2xl border border-zinc-800 shadow-sm transition flex flex-col justify-between space-y-3 cursor-pointer";
+                card.innerHTML = `
+                    <div>
+                        <div class="flex items-start justify-between">
+                            <h3 class="text-sm font-bold truncate">${escapeHtml(pl.name)}</h3>
+                            <div class="flex items-center space-x-1.5 text-zinc-400">
+                                <button aria-label="Edit playlist" onclick="event.stopPropagation(); openEditPlaylistModal('${escapeHtml(pl.id)}')" class="hover:text-white transition text-xs p-1"><i class="fa-solid fa-pen-to-square"></i></button>
+                                <button aria-label="Delete playlist" onclick="event.stopPropagation(); deletePlaylist('${escapeHtml(pl.id)}')" class="hover:text-red-500 transition text-xs p-1"><i class="fa-solid fa-trash-can"></i></button>
+                            </div>
+                        </div>
+                        <p class="text-xs text-zinc-400 line-clamp-2 mt-1">${escapeHtml(pl.note || 'No description')}</p>
+                    </div>
+                    <div class="flex items-center justify-between border-t border-zinc-800 pt-2 text-xs">
+                        <span class="text-[10px] text-zinc-500">${pl.trackIds.length} track(s)</span>
+                        <button onclick="event.stopPropagation(); playPlaylist('${escapeHtml(pl.id)}')" class="accent-text hover:underline font-semibold text-[11px] flex items-center space-x-1">
+                            <i class="fa-solid fa-play text-[10px]"></i> <span>Play Mix</span>
+                        </button>
+                    </div>
+                `;
+                card.addEventListener('click', () => {
+                    openDetailView(`Playlist: ${pl.name}`, () => playlistTracks(pl), pl.id);
+                });
+                container.appendChild(card);
+            });
+        }
+
+        function playlistTracks(pl) {
+            const byId = new Map(masterTracks.map(t => [t.id, t]));
+            return pl.trackIds.map(id => byId.get(id)).filter(Boolean);
+        }
+
+        function removeFromPlaylist(plId, trackId) {
+            const pl = playlists.find(p => p.id === plId);
+            if (!pl) return;
+            const i = pl.trackIds.indexOf(trackId);
+            if (i === -1) return;
+            pl.trackIds.splice(i, 1);
+            savePlaylistsToStorage();
+            refreshDetail();
+            renderPlaylistsView();
+            showToast('Removed from playlist');
+        }
+
+        function movePlaylistTrack(plId, trackId, dir) {
+            const pl = playlists.find(p => p.id === plId);
+            if (!pl) return;
+            const shown = playlistTracks(pl).map(t => t.id);
+            const at = shown.indexOf(trackId);
+            const other = shown[at + dir];
+            if (at === -1 || other === undefined) return;
+            const a = pl.trackIds.indexOf(trackId);
+            const b = pl.trackIds.indexOf(other);
+            pl.trackIds[a] = other;
+            pl.trackIds[b] = trackId;
+            savePlaylistsToStorage();
+            refreshDetail();
+        }
+
+        btnCreatePlaylist.addEventListener('click', () => {
+            editingPlaylistId.value = '';
+            playlistNameInput.value = '';
+            playlistNoteInput.value = '';
+            document.getElementById('playlistModalTitle').innerText = 'Create New Playlist';
+            playlistModal.classList.remove('hidden');
+        });
+
+        function openEditPlaylistModal(id) {
+            const pl = playlists.find(p => p.id === id);
+            if (!pl) return;
+            editingPlaylistId.value = pl.id;
+            playlistNameInput.value = pl.name;
+            playlistNoteInput.value = pl.note || '';
+            document.getElementById('playlistModalTitle').innerText = 'Edit Playlist';
+            playlistModal.classList.remove('hidden');
+        }
+
+        btnSavePlaylist.addEventListener('click', () => {
+            const name = playlistNameInput.value.trim();
+            const note = playlistNoteInput.value.trim();
+            const editId = editingPlaylistId.value;
+            if (!name) return alert('Enter a playlist name.');
+
+            if (editId) {
+                const pl = playlists.find(p => p.id === editId);
+                if (pl) { pl.name = name; pl.note = note; }
+            } else {
+                playlists.push({ id: `pl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name, note, trackIds: [] });
+            }
+            savePlaylistsToStorage();
+            playlistModal.classList.add('hidden');
+            renderPlaylistsView();
+        });
+
+        function deletePlaylist(id) {
+            const pl = playlists.find(p => p.id === id);
+            if (!pl) return;
+            showConfirmModal('Delete Playlist', `Delete "${pl.name}"?`, () => {
+                playlists = playlists.filter(p => p.id !== id);
+                savePlaylistsToStorage();
+                renderPlaylistsView();
+            });
+        }
+
+        function playPlaylist(id) {
+            const pl = playlists.find(p => p.id === id);
+            if (!pl || !pl.trackIds.length) return;
+            const list = playlistTracks(pl).filter(isPlayable);
+            if (!list.length) { showToast('Re-open your music folder to play this playlist.'); return; }
+            setQueue(list, 0);
+            playTrack(currentQueue[0]);
+        }
+
+        function savePlaylistsToStorage() {
+            localStorage.setItem('studio_playlists', JSON.stringify(playlists));
+        }
+
+        function openAddToPlaylistModal(trackIds) {
+            if (!playlists.length) return alert('Create a playlist first.');
+            modalSelectedCount.innerText = trackIds.length;
+            targetPlaylistsList.innerHTML = '';
+
+            playlists.forEach(pl => {
+                const btn = document.createElement('button');
+                btn.className = "w-full text-left p-3 rounded-xl bg-black/40 border border-zinc-800 hover:border-zinc-700 transition flex items-center justify-between text-xs font-semibold";
+                btn.innerHTML = `<span>${escapeHtml(pl.name)}</span><span class="text-[10px] text-zinc-500">${pl.trackIds.length} tracks</span>`;
+                btn.addEventListener('click', () => {
+                    trackIds.forEach(id => { if (!pl.trackIds.includes(id)) pl.trackIds.push(id); });
+                    savePlaylistsToStorage();
+                    addToPlaylistModal.classList.add('hidden');
+                    renderPlaylistsView();
+                    showToast(`Added to "${pl.name}"`);
+                });
+                targetPlaylistsList.appendChild(btn);
+            });
+            addToPlaylistModal.classList.remove('hidden');
+        }
+
+        /* ---------- Playlist Editing Tools & Batch Actions ---------- */
+        document.getElementById('btnDuplicatePlaylist').addEventListener('click', () => {
+            if (!detailCtx || !detailCtx.playlistId) return;
+            const pl = playlists.find(p => p.id === detailCtx.playlistId);
+            if (!pl) return;
+            const clone = {
+                id: `pl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                name: `${pl.name} (Copy)`,
+                note: pl.note,
+                trackIds: [...pl.trackIds]
+            };
+            playlists.push(clone);
+            savePlaylistsToStorage();
+            renderPlaylistsView();
+            showToast(`Duplicated as "${clone.name}"`);
+        });
+
+        document.getElementById('btnSortPlaylist').addEventListener('click', () => {
+            if (!detailCtx || !detailCtx.playlistId) return;
+            const pl = playlists.find(p => p.id === detailCtx.playlistId);
+            if (!pl || !pl.trackIds.length) return;
+
+            const byId = new Map(masterTracks.map(t => [t.id, t]));
+            const tracks = pl.trackIds.map(id => byId.get(id)).filter(Boolean);
+            
+            tracks.sort((a, b) => a.name.localeCompare(b.name));
+            // Keep ids whose files are not loaded right now, so sorting never drops them
+            const missing = pl.trackIds.filter(id => !byId.has(id));
+            pl.trackIds = tracks.map(t => t.id).concat(missing);
+            savePlaylistsToStorage();
+            refreshDetail();
+            showToast('Playlist sorted alphabetically');
+        });
+
+        document.getElementById('btnAddSongsToPlaylist').addEventListener('click', () => {
+            if (!detailCtx || !detailCtx.playlistId) return;
+            selectedAddIds.clear();
+            addSongsSearch.value = '';
+            renderAddSongsPicker('');
+            addSongsModal.classList.remove('hidden');
+        });
+
+        function renderAddSongsPicker(filter) {
+            const pl = playlists.find(p => p.id === detailCtx.playlistId);
+            if (!pl) return;
+            const existingIds = new Set(pl.trackIds);
+            
+            const available = masterTracks.filter(t => 
+                !existingIds.has(t.id) && 
+                (t.name.toLowerCase().includes(filter) || t.artist.toLowerCase().includes(filter))
+            );
+
+            addSongsList.innerHTML = '';
+            if (!available.length) {
+                addSongsList.innerHTML = `<div class="text-center py-10 text-zinc-500 text-xs">No additional tracks available.</div>`;
+                return;
+            }
+
+            const frag = document.createDocumentFragment();
+            const SHOWN_MAX = 300; // keeps huge libraries snappy; the search box narrows it down
+            available.slice(0, SHOWN_MAX).forEach(track => {
+                const isSelected = selectedAddIds.has(track.id);
+                const row = document.createElement('div');
+                row.className = `p-2.5 rounded-xl bg-black/40 border border-zinc-800 flex items-center justify-between cursor-pointer transition ${isSelected ? 'accent-border' : ''}`;
+                row.innerHTML = `
+                    <div class="flex items-center space-x-3 min-w-0 flex-1">
+                        <input type="checkbox" aria-label="Select track" ${isSelected ? 'checked' : ''} class="w-4 h-4 rounded cursor-pointer pointer-events-none">
+                        <div class="min-w-0 flex-1">
+                            <p class="text-xs font-bold truncate">${escapeHtml(track.name)}</p>
+                            <p class="text-[10px] text-zinc-400 truncate">${escapeHtml(track.artist)}</p>
+                        </div>
+                    </div>
+                `;
+                row.addEventListener('click', () => {
+                    if (selectedAddIds.has(track.id)) selectedAddIds.delete(track.id);
+                    else selectedAddIds.add(track.id);
+                    document.getElementById('selectedAddCount').innerText = selectedAddIds.size;
+                    row.classList.toggle('accent-border', selectedAddIds.has(track.id));
+                    row.querySelector('input').checked = selectedAddIds.has(track.id);
+                });
+                frag.appendChild(row);
+            });
+            if (available.length > SHOWN_MAX) {
+                const more = document.createElement('div');
+                more.className = 'text-center py-3 text-zinc-500 text-[11px]';
+                more.textContent = `Showing ${SHOWN_MAX} of ${available.length}. Type to search for the rest.`;
+                frag.appendChild(more);
+            }
+            addSongsList.appendChild(frag);
+            document.getElementById('selectedAddCount').innerText = selectedAddIds.size;
+        }
+
+        addSongsSearch.addEventListener('input', (e) => renderAddSongsPicker(e.target.value.toLowerCase().trim()));
+
+        btnConfirmAddSongs.addEventListener('click', () => {
+            if (!detailCtx || !detailCtx.playlistId || !selectedAddIds.size) return;
+            const pl = playlists.find(p => p.id === detailCtx.playlistId);
+            if (!pl) return;
+
+            selectedAddIds.forEach(id => {
+                if (!pl.trackIds.includes(id)) pl.trackIds.push(id);
+            });
+            savePlaylistsToStorage();
+            addSongsModal.classList.add('hidden');
+            refreshDetail();
+            renderPlaylistsView();
+            showToast(`Added ${selectedAddIds.size} track(s)`);
+        });
+
+        document.getElementById('btnPlSelectAll').addEventListener('click', () => {
+            if (!detailTracksArr.length) return;
+            const allSelected = detailTracksArr.every(t => plSelectedTrackIds.has(t.id));
+            const btn = document.getElementById('btnPlSelectAll');
+            if (allSelected) {
+                plSelectedTrackIds.clear();
+                btn.innerText = 'Select All';
+            } else {
+                detailTracksArr.forEach(t => plSelectedTrackIds.add(t.id));
+                btn.innerText = 'Deselect All';
+            }
+            refreshDetail();
+        });
+
+        document.getElementById('btnPlRemoveSelected').addEventListener('click', () => {
+            if (!detailCtx || !detailCtx.playlistId || !plSelectedTrackIds.size) return;
+            const pl = playlists.find(p => p.id === detailCtx.playlistId);
+            if (!pl) return;
+
+            showConfirmModal('Remove Tracks', `Remove ${plSelectedTrackIds.size} selected track(s) from this playlist?`, () => {
+                pl.trackIds = pl.trackIds.filter(id => !plSelectedTrackIds.has(id));
+                savePlaylistsToStorage();
+                plSelectedTrackIds.clear();
+                refreshDetail();
+                renderPlaylistsView();
+                showToast('Removed selected tracks');
+            });
+        });
+
+        /* ---------- Selection ---------- */
+        btnSelectAll.addEventListener('click', () => {
+            const source = getActiveTab() === 'tracks' ? viewTracks : masterTracks;
+            source.forEach(t => selectedTrackIds.add(t.id));
+            renderCurrentView();
+            updateSelectionUI();
+        });
+
+        btnDeselectAll.addEventListener('click', () => {
+            selectedTrackIds.clear();
+            renderCurrentView();
+            updateSelectionUI();
+        });
+
+        function updateSelectionUI() {
+            const count = selectedTrackIds.size;
+            selectedCountEl.innerText = count;
+            btnAddSelectedToPlaylist.disabled = count === 0;
+        }
+
+        btnAddSelectedToPlaylist.addEventListener('click', () => {
+            if (!selectedTrackIds.size) return;
+            openAddToPlaylistModal(Array.from(selectedTrackIds));
+        });
+
+        /* ---------- Playback / queue ---------- */
+        function setQueue(list, index) {
+            currentQueue = [...list];
+            currentQueueIndex = index;
+            playHistory = [];
+        }
+
+        function playTrackById(id, ctx = 'tracks') {
+            const source = ctx === 'detail' ? detailTracksArr : viewTracks;
+            const playable = source.filter(isPlayable);
+            const index = playable.findIndex(t => t.id === id);
+
+            if (index === -1) {
+                const track = masterTracks.find(t => t.id === id);
+                if (track && !isPlayable(track)) { showToast('Re-open your music folder to play this track.'); return; }
+                if (track) { setQueue([track], 0); playTrack(track); }
+                return;
+            }
+            setQueue(playable, index);
+            playTrack(currentQueue[index]);
+        }
+
+        function playTrack(track) {
+            if (!track) return;
+            if (!isPlayable(track)) { showToast('Re-open your music folder to play this track.'); return; }
+
+            initWebAudioIfNeeded();
+
+            if (currentObjectUrl) { URL.revokeObjectURL(currentObjectUrl); currentObjectUrl = null; }
+            if (track.file) currentObjectUrl = URL.createObjectURL(track.file);
+            currentTrackId = track.id;
+            currentTrackRef = track;
+
+            audioEl.src = currentObjectUrl || track.src;
+            audioEl.playbackRate = parseFloat(speedSlider.value);
+            audioEl.play().catch(e => console.error(e));
+
+            playerTrackTitle.innerText = track.name;
+            playerArtistTitle.innerText = `${track.artist} • ${track.album}`;
+            loadArtFor(track);
+            updateMediaSession(track);
+            syncNativeSession();
+            renderCurrentView();
+        }
+
+        btnPlayPause.addEventListener('click', () => {
+            initWebAudioIfNeeded();
+            if (!audioEl.src) {
+                const first = masterTracks.find(isPlayable);
+                if (first) { setQueue(masterTracks.filter(isPlayable), 0); playTrack(currentQueue[0]); }
+                else showToast('Open a music folder first.');
+                return;
+            }
+            if (audioEl.paused) audioEl.play(); else audioEl.pause();
+        });
+
+        function playPrevTrack() {
+            if (audioEl.currentTime > 3) { audioEl.currentTime = 0; return; }
+            if (playHistory.length) {
+                currentQueueIndex = playHistory.pop();
+            } else if (currentQueueIndex > 0) {
+                currentQueueIndex--;
+            } else {
+                audioEl.currentTime = 0;
+                return;
+            }
+            playTrack(currentQueue[currentQueueIndex]);
+        }
+
+        function playNextTrack() {
+            if (!currentQueue.length) return;
+            const prevIndex = currentQueueIndex;
+
+            if (isShuffle) {
+                if (currentQueue.length > 1) {
+                    let next;
+                    do { next = Math.floor(Math.random() * currentQueue.length); } while (next === currentQueueIndex);
+                    currentQueueIndex = next;
+                } else if (repeatMode === 'none') {
+                    return;
+                }
+            } else if (currentQueueIndex < currentQueue.length - 1) {
+                currentQueueIndex++;
+            } else if (repeatMode === 'all') {
+                currentQueueIndex = 0;
+            } else {
+                return;
+            }
+
+            if (prevIndex >= 0) playHistory.push(prevIndex);
+            if (playHistory.length > 200) playHistory.shift();
+            playTrack(currentQueue[currentQueueIndex]);
+        }
+
+        btnPrev.addEventListener('click', playPrevTrack);
+        btnNext.addEventListener('click', playNextTrack);
+
+        function handleTrackEnded() {
+            if (repeatMode === 'one') { audioEl.currentTime = 0; audioEl.play(); }
+            else playNextTrack();
+        }
+
+        btnShuffle.addEventListener('click', () => {
+            isShuffle = !isShuffle;
+            btnShuffle.classList.toggle('accent-text', isShuffle);
+        });
+
+        btnRepeat.addEventListener('click', () => {
+            if (repeatMode === 'none') { repeatMode = 'all'; btnRepeat.className = 'p-2 accent-text transition text-xs'; }
+            else if (repeatMode === 'all') { repeatMode = 'one'; btnRepeat.className = 'p-2 text-amber-500 transition text-xs'; }
+            else { repeatMode = 'none'; btnRepeat.className = 'p-2 text-zinc-400 hover:text-zinc-200 transition text-xs'; }
+        });
+
+        function updateProgress() {
+            if (isFinite(audioEl.duration) && audioEl.duration > 0) {
+                seekSlider.value = (audioEl.currentTime / audioEl.duration) * 100 || 0;
+                currentTimeEl.innerText = formatTime(audioEl.currentTime);
+                durationTimeEl.innerText = formatTime(audioEl.duration);
+                if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) {
+                    try {
+                        navigator.mediaSession.setPositionState({
+                            duration: audioEl.duration,
+                            playbackRate: audioEl.playbackRate,
+                            position: Math.min(audioEl.currentTime, audioEl.duration)
+                        });
+                    } catch (e) {}
+                }
+            }
+        }
+
+        seekSlider.addEventListener('input', (e) => {
+            if (isFinite(audioEl.duration)) audioEl.currentTime = (e.target.value / 100) * audioEl.duration;
+        });
+
+        /* ---------- Modals ---------- */
+        btnExtraControls.addEventListener('click', () => extraControlsPanel.classList.toggle('hidden'));
+        openSettingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
+
+        document.querySelectorAll('.closeModalBtn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                settingsModal.classList.add('hidden');
+                playlistModal.classList.add('hidden');
+                addToPlaylistModal.classList.add('hidden');
+                addSongsModal.classList.add('hidden');
+                document.getElementById('exportModal').classList.add('hidden');
+                confirmModal.classList.add('hidden');
+            });
+        });
+
+        function showConfirmModal(title, msg, onConfirm) {
+            confirmTitle.innerText = title;
+            confirmMessage.innerText = msg;
+            onConfirmCallback = onConfirm;
+            confirmModal.classList.remove('hidden');
+        }
+
+        btnConfirmAction.addEventListener('click', () => { if (onConfirmCallback) onConfirmCallback(); confirmModal.classList.add('hidden'); });
+        btnConfirmCancel.addEventListener('click', () => confirmModal.classList.add('hidden'));
+
+        /* ---------- Playlist import / export ---------- */
+        // Saves a text file. Android app: into the Downloads folder. Browser: normal download.
+        async function saveTextFile(name, text) {
+            if (isNativeApp()) {
+                try {
+                    const r = await nativeCall('MediaControls', 'saveTextFile', { name: name, text: text, mime: 'application/json' });
+                    return (r && r.location) || 'Downloads/' + name;
+                } catch (e) { /* older app build without the plugin: try the Filesystem plugin */ }
+                try {
+                    await nativeCall('Filesystem', 'writeFile', { path: name, data: text, directory: 'DOCUMENTS', encoding: 'utf8', recursive: true });
+                    return 'Documents/' + name;
+                } catch (e) { throw new Error('Could not save the file'); }
+            }
+            const blob = new Blob([text], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            return name;
+        }
+
+        const exportModal = document.getElementById('exportModal');
+        const exportList = document.getElementById('exportList');
+        const exportCount = document.getElementById('exportCount');
+        const btnConfirmExport = document.getElementById('btnConfirmExport');
+        const btnExportToggleAll = document.getElementById('btnExportToggleAll');
+        const exportSelected = new Set();
+
+        function updateExportUI() {
+            exportCount.innerText = exportSelected.size;
+            btnConfirmExport.disabled = exportSelected.size === 0;
+            btnExportToggleAll.innerText = exportSelected.size === playlists.length ? 'Deselect All' : 'Select All';
+        }
+
+        btnExportPlaylists.addEventListener('click', () => {
+            if (!playlists.length) return alert('No playlists to export yet.');
+            exportSelected.clear();
+            playlists.forEach(p => exportSelected.add(p.id));
+            exportList.innerHTML = '';
+            playlists.forEach(pl => {
+                const row = document.createElement('label');
+                row.className = 'p-2.5 rounded-xl bg-black/40 border border-zinc-800 flex items-center space-x-3 cursor-pointer text-xs';
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.checked = true;
+                box.className = 'w-4 h-4 rounded';
+                box.addEventListener('change', () => {
+                    if (box.checked) exportSelected.add(pl.id); else exportSelected.delete(pl.id);
+                    updateExportUI();
+                });
+                const name = document.createElement('span');
+                name.className = 'flex-1 min-w-0 truncate font-semibold';
+                name.textContent = pl.name;
+                const count = document.createElement('span');
+                count.className = 'text-[10px] text-zinc-400';
+                count.textContent = `${pl.trackIds.length} track(s)`;
+                row.append(box, name, count);
+                exportList.appendChild(row);
+            });
+            updateExportUI();
+            exportModal.classList.remove('hidden');
+        });
+
+        btnExportToggleAll.addEventListener('click', () => {
+            const all = exportSelected.size === playlists.length;
+            exportSelected.clear();
+            if (!all) playlists.forEach(p => exportSelected.add(p.id));
+            exportList.querySelectorAll('input').forEach(b => { b.checked = !all; });
+            updateExportUI();
+        });
+
+        btnConfirmExport.addEventListener('click', async () => {
+            const chosen = playlists.filter(p => exportSelected.has(p.id));
+            if (!chosen.length) return;
+            const fileName = chosen.length === 1
+                ? 'loonie_playlist_' + chosen[0].name.replace(/[^\w\-]+/g, '_').slice(0, 40) + '.json'
+                : 'loonie_tunes_playlists.json';
+            try {
+                const where = await saveTextFile(fileName, JSON.stringify(chosen, null, 2));
+                exportModal.classList.add('hidden');
+                showToast(`Exported ${chosen.length} playlist(s) to ${where}`);
+            } catch (e) {
+                alert('Export failed: ' + (e && e.message ? e.message : 'unknown error'));
+            }
+        });
+
+        importJsonInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    if (!Array.isArray(data)) throw new Error('not an array');
+
+                    const clean = data
+                        .filter(p => p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.trackIds))
+                        .map(p => ({
+                            id: p.id,
+                            name: p.name.slice(0, 120),
+                            note: typeof p.note === 'string' ? p.note.slice(0, 500) : '',
+                            trackIds: p.trackIds.filter(x => typeof x === 'string')
+                        }));
+                    if (!clean.length) throw new Error('no valid playlists');
+
+                    clean.forEach(imp => {
+                        const existing = playlists.find(p => p.id === imp.id);
+                        if (existing) Object.assign(existing, imp);
+                        else playlists.push(imp);
+                    });
+                    savePlaylistsToStorage();
+                    renderPlaylistsView();
+                    alert(`Imported ${clean.length} playlist(s).`);
+                } catch (err) {
+                    alert('Invalid playlist file.');
+                }
+                importJsonInput.value = '';
+            };
+            reader.readAsText(file);
+        });
+
+        /* ---------- Android / Capacitor native folder access ---------- */
+        const NATIVE_ROOT_KEY = 'loonie_native_root';
+        const fbModal = document.getElementById('folderBrowserModal');
+        const fbPathEl = document.getElementById('fbPath');
+        const fbListEl = document.getElementById('fbList');
+        const fbInfoEl = document.getElementById('fbInfo');
+        const fbHelpEl = document.getElementById('fbHelp');
+        const fbHelpText = document.getElementById('fbHelpText');
+        const fbGrantBtn = document.getElementById('fbGrant');
+        const fbOpenSettingsBtn = document.getElementById('fbOpenSettings');
+        const fbUseBtn = document.getElementById('fbUse');
+        const fbPickFilesBtn = document.getElementById('fbPickFiles');
+        const filePickerInput = document.getElementById('filePickerInput');
+        let fbCurrentPath = '';
+        let nativeRootUri = null;
+
+        const PERMISSION_HELP = 'Loonie Tunes cannot see your music yet. Allow "Music and audio" for the app, then try again. You can also use "Pick files instead".';
+        const DENIED_HELP = 'Music access is turned off, so no songs can be found. Tap "Allow access", or open App Settings → Permissions → Music and audio and switch it on.';
+
+        function fsCall(method, opts) {
+            return nativeCall('Filesystem', method, opts);
+        }
+
+        let musicAccess = { granted: null, notifications: null, images: null, hasPlugin: false };
+
+        async function ensureMusicAccess(promptUser = true) {
+            try {
+                const r = await nativeCall('MediaControls', promptUser ? 'requestMusicAccess' : 'checkMusicAccess');
+                musicAccess = { granted: !!(r && r.granted), notifications: !!(r && r.notifications), images: !(r && r.images === false), hasPlugin: true };
+            } catch (e) {
+                musicAccess = { granted: null, notifications: null, images: null, hasPlugin: false };
+                try {
+                    const st = await fsCall('checkPermissions', {});
+                    if (promptUser && st && st.publicStorage && st.publicStorage !== 'granted') await fsCall('requestPermissions', {});
+                } catch (err) { /* best effort */ }
+            }
+            return musicAccess;
+        }
+
+        async function getNativeRootUri() {
+            if (nativeRootUri) return nativeRootUri;
+            try {
+                const r = await fsCall('getUri', { path: '', directory: 'EXTERNAL_STORAGE' });
+                nativeRootUri = String(r.uri).replace(/\/+$/, '');
+            } catch (e) {
+                nativeRootUri = 'file:///storage/emulated/0';
+            }
+            return nativeRootUri;
+        }
+
+        function joinPath(dir, name) { return dir ? dir + '/' + name : name; }
+        function parentPath(p) { const i = p.lastIndexOf('/'); return i === -1 ? '' : p.slice(0, i); }
+
+        async function fsList(path) {
+            const res = await fsCall('readdir', { path: path, directory: 'EXTERNAL_STORAGE' });
+            return (res.files || []).map(f => {
+                if (typeof f === 'string') {
+                    return { name: f, type: (isAudioFile(f) || f.includes('.')) ? 'file' : 'directory' };
+                }
+                return { name: f.name, type: f.type, size: f.size, mtime: f.mtime, uri: f.uri };
+            });
+        }
+
+        async function scanNativeFolder(rootPath, onProgress) {
+            const rootUri = await getNativeRootUri();
+            const out = [];
+            const stack = [rootPath];
+            const dirCover = new Map();
+            let visited = 0;
+            const COVER_RE = /^(cover|folder|album|albumart|albumartsmall|front)\.(jpe?g|png|webp)$/i;
+
+            while (stack.length && visited < 5000) {
+                const dir = stack.pop();
+                let items;
+                try { items = await fsList(dir); } catch (e) { continue; }
+                visited++;
+
+                let cover = null;
+                for (const it of items) {
+                    if (it.type !== 'directory' && it.name && COVER_RE.test(it.name) && (!cover || it.name.toLowerCase() < cover.name.toLowerCase())) cover = it;
+                }
+                let coverInfo = null;
+                if (cover) {
+                    const cfull = joinPath(dir, cover.name);
+                    const curi = cover.uri || (rootUri + '/' + cfull.split('/').map(encodeURIComponent).join('/'));
+                    coverInfo = { src: window.Capacitor.convertFileSrc(curi), key: 'f' + (cover.mtime || 0) + '_' + (cover.size || 0) + '_' + cfull };
+                } else if (dir !== rootPath && dirCover.has(parentPath(dir))) {
+                    coverInfo = dirCover.get(parentPath(dir));
+                }
+                dirCover.set(dir, coverInfo);
+
+                for (const it of items) {
+                    if (!it.name || it.name.startsWith('.')) continue;
+                    const full = joinPath(dir, it.name);
+                    if (it.type === 'directory') {
+                        if (dir === '' && it.name === 'Android') continue;
+                        stack.push(full);
+                    } else if (isAudioFile(it.name)) {
+                        const uri = it.uri || (rootUri + '/' + full.split('/').map(encodeURIComponent).join('/'));
+                        out.push({
+                            file: null,
+                            src: window.Capacitor.convertFileSrc(uri),
+                            coverSrc: coverInfo ? coverInfo.src : null,
+                            coverKey: coverInfo ? coverInfo.key : null,
+                            rel: full,
+                            folders: (rootPath ? full.slice(rootPath.length + 1) : full).split('/').slice(0, -1),
+                            name: it.name,
+                            size: it.size || 0,
+                            mtime: it.mtime || 0
+                        });
+                    }
+                }
+                if (onProgress && visited % 10 === 0) onProgress(out.length);
+            }
+            out.sort((a, b) => a.rel.localeCompare(b.rel));
+            return out;
+        }
+
+        function makeFolderRow(label, icon, onClick) {
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'w-full text-left px-3 py-2.5 rounded-xl bg-black/40 border border-zinc-800 hover:border-zinc-700 transition flex items-center space-x-3 text-xs font-semibold';
+            const i = document.createElement('i');
+            i.className = 'fa-solid ' + icon + ' text-zinc-400';
+            const span = document.createElement('span');
+            span.className = 'truncate';
+            span.textContent = label;
+            row.append(i, span);
+            row.addEventListener('click', onClick);
+            return row;
+        }
+
+        function showFolderHelp(text) {
+            fbHelpText.textContent = text;
+            fbGrantBtn.classList.toggle('hidden', !musicAccess.hasPlugin);
+            fbOpenSettingsBtn.classList.toggle('hidden', !musicAccess.hasPlugin);
+            fbHelpEl.classList.remove('hidden');
+        }
+
+        async function renderFolderBrowser(path, allowFallback) {
+            fbCurrentPath = path;
+            fbPathEl.textContent = '/storage/emulated/0' + (path ? '/' + path : '');
+            fbListEl.innerHTML = '<p class="text-xs text-zinc-500 py-6 text-center">Loading…</p>';
+            fbInfoEl.textContent = '';
+            fbUseBtn.disabled = true;
+
+            let items;
+            try {
+                items = await fsList(path);
+            } catch (e) {
+                if (allowFallback && path !== '') return renderFolderBrowser('', false);
+                fbListEl.innerHTML = '';
+                showFolderHelp(musicAccess.granted === false ? DENIED_HELP : PERMISSION_HELP);
+                return;
+            }
+
+            const dirs = items
+                .filter(i => i.type === 'directory' && !i.name.startsWith('.'))
+                .sort((a, b) => a.name.localeCompare(b.name));
+            const songs = items.filter(i => i.type !== 'directory' && isAudioFile(i.name)).length;
+
+            fbListEl.innerHTML = '';
+            if (path) fbListEl.appendChild(makeFolderRow('Up one level', 'fa-arrow-up', () => renderFolderBrowser(parentPath(path), false)));
+            dirs.forEach(d => fbListEl.appendChild(makeFolderRow(d.name, 'fa-folder', () => renderFolderBrowser(joinPath(path, d.name), false))));
+
+            fbInfoEl.textContent = dirs.length + ' folder(s) · ' + songs + ' song(s) here. Songs in subfolders are included too.';
+            fbUseBtn.disabled = false;
+
+            if (musicAccess.granted === false) showFolderHelp(DENIED_HELP);
+            else if (!items.length) showFolderHelp(PERMISSION_HELP);
+            else fbHelpEl.classList.add('hidden');
+        }
+
+        async function openNativeFolderBrowser() {
+            fbHelpEl.classList.add('hidden');
+            fbModal.classList.remove('hidden');
+            await ensureMusicAccess(true);
+            const saved = safeParse(localStorage.getItem(NATIVE_ROOT_KEY), null);
+            const start = saved && typeof saved.path === 'string' ? saved.path : 'Music';
+            await renderFolderBrowser(start, true);
+        }
+
+        async function restoreNativeLibrary() {
+            if (!isNativeApp()) return;
+            const saved = safeParse(localStorage.getItem(NATIVE_ROOT_KEY), null);
+            if (!saved || typeof saved.path !== 'string') return;
+            folderBtnText.innerText = saved.path ? saved.path.split('/').pop() : 'Internal storage';
+            try {
+                await artStoreReady;
+                await ensureMusicAccess(false);
+                const entries = await scanNativeFolder(saved.path);
+                if (entries.length) ingestFiles(entries, { quiet: true });
+            } catch (e) { /* keep restored list */ }
+        }
+
+        document.querySelectorAll('#fbShortcuts button').forEach(b => {
+            b.addEventListener('click', () => renderFolderBrowser(b.dataset.path || '', false));
+        });
+        document.querySelectorAll('#folderBrowserModal .closeModalBtn').forEach(b => {
+            b.addEventListener('click', () => fbModal.classList.add('hidden'));
+        });
+
+        fbGrantBtn.addEventListener('click', () => { openNativeFolderBrowser(); });
+        fbOpenSettingsBtn.addEventListener('click', () => { nativeCall('MediaControls', 'openAppSettings').catch(() => {}); });
+
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState !== 'visible' || fbModal.classList.contains('hidden')) return;
+            await ensureMusicAccess(false);
+            renderFolderBrowser(fbCurrentPath, false);
+        });
+
+        fbUseBtn.addEventListener('click', async () => {
+            const path = fbCurrentPath;
+
+            if (musicAccess.granted === false) {
+                await ensureMusicAccess(true);
+                if (musicAccess.granted === false) { showFolderHelp(DENIED_HELP); return; }
+            }
+
+            fbModal.classList.add('hidden');
+            showToast('Scanning folder…');
+            let entries = [];
+            try {
+                entries = await scanNativeFolder(path, n => showToast('Found ' + n + ' songs…'));
+            } catch (e) {
+                showToast('Could not read that folder.');
+                return;
+            }
+            if (!entries.length) {
+                await ensureMusicAccess(false);
+                if (musicAccess.granted === false) {
+                    fbModal.classList.remove('hidden');
+                    renderFolderBrowser(path, false);
+                } else {
+                    showToast('No audio files found in that folder.');
+                }
+                return;
+            }
+            try { localStorage.setItem(NATIVE_ROOT_KEY, JSON.stringify({ path: path })); } catch (e) {}
+            folderBtnText.innerText = path ? path.split('/').pop() : 'Internal storage';
+            ingestFiles(entries);
+        });
+
+        document.getElementById('addFilesBtn').addEventListener('click', () => filePickerInput.click());
+        fbPickFilesBtn.addEventListener('click', () => { fbModal.classList.add('hidden'); filePickerInput.click(); });
+        filePickerInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files).filter(f => isAudioFile(f.name));
+            if (!files.length) { showToast('No audio files selected.'); return; }
+            ingestFiles(files.map(f => ({ file: f, rel: f.name })));
+            e.target.value = '';
+        });
+
+        /* ---------- Service worker ---------- */
+        if ('serviceWorker' in navigator && !isNativeApp()) {
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+        }
+    </script>
+</body>
+</html>
